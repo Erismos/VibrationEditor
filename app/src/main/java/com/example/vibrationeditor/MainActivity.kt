@@ -60,6 +60,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.vibrationeditor.ui.screens.patterns.PatternsScreen
 import com.example.vibrationeditor.ui.theme.VibrationEditorTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -139,7 +140,7 @@ fun VibrationEditorApp() {
     ) {
         NavHost(navController = navController, startDestination = AppDestinations.PATTERNS.route, modifier = Modifier.fillMaxSize()) {
             composable(AppDestinations.STUDIO.route) { Studio() }
-            composable(AppDestinations.PATTERNS.route) { Patterns() }
+            composable(AppDestinations.PATTERNS.route) { PatternsScreen() }
             composable(AppDestinations.APPLICATIONS.route) { Applications() }
         }
     }
@@ -177,14 +178,7 @@ fun Studio() {
 }
 
 /** Patterns screen placeholder. */
-@Composable
-fun Patterns() {
-    Scaffold(topBar = { StableTopAppBar("Patterns") }) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
-            Text("Patterns Page")
-        }
-    }
-}
+/** In screens.patterns.Patterns */
 
 /**
  * Triggers a one-shot vibration using the appropriate API for the device SDK.
