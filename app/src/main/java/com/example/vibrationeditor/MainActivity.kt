@@ -41,6 +41,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.vibrationeditor.ui.screens.applications.ApplicationsScreen
 import com.example.vibrationeditor.ui.screens.patterns.PatternsScreen
+import com.example.vibrationeditor.ui.screens.studio.Studio
 import com.example.vibrationeditor.ui.theme.VibrationEditorTheme
 
 /**
@@ -146,14 +147,6 @@ fun StableTopAppBar(title: String) {
 }
 
 /** Studio screen placeholder. */
-@Composable
-fun Studio() {
-    Scaffold(topBar = { StableTopAppBar("Studio") }) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
-            Text("Studio Content")
-        }
-    }
-}
 
 /**
  * Triggers a one-shot vibration using the appropriate API for the device SDK.
