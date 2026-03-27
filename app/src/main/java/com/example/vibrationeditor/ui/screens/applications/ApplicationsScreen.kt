@@ -74,6 +74,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.vibrationeditor.VibrationNotificationListener
 import com.example.vibrationeditor.triggerVibration
+import com.example.vibrationeditor.ui.screens.shared.Pattern
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -82,9 +83,6 @@ data class AppListItem(val name: String, val packageName: String, val icon: Draw
 
 /** Presentation model for a notification channel/category. */
 data class NotificationType(val id: String, val name: String, var patternName: String = "Par défaut")
-
-/** Presentation model for a vibration pattern choice. */
-data class VibrationPattern(val name: String)
 
 /**
  * Applications screen listing launchable apps and providing a details view.
@@ -213,15 +211,8 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
     var editingType by remember { mutableStateOf<NotificationType?>(null) }
     val patternOverrides = remember { mutableStateMapOf<String, String>() }
 
-    // Temporary patterns until Studio-defined patterns are wired in.
-    val availablePatterns = remember {
-        listOf(
-            VibrationPattern("S.O.S"),
-            VibrationPattern("Battement de cœur"),
-            VibrationPattern("Rapide"),
-            VibrationPattern("Long")
-        )
-    }
+    // Use the Pattern data class for available options.
+    val availablePatterns = remember { Pattern.loadAll(context) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -262,7 +253,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                 isRestricted = false
             } catch (e: SecurityException) {
                 // Android often blocks this for third-party apps.
-                Log.w("VibrationEditor", "L'accès aux canaux de ${app.packageName} est restreint par Android.", e)
+                Log.w("VibrationEditor", "L'accès aux canaux de ${app.packageName} est restreint par Android.")
                 isRestricted = true
                 value = listOf(NotificationType("default", "Toutes les notifications"))
             } catch (e: Exception) {
@@ -414,12 +405,15 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                             )
                         }
 
-                        // User-defined patterns.
+                        // Real patterns from storage.
                         items(availablePatterns) { pattern ->
                             PatternOptionRow(
                                 name = pattern.name,
                                 isSelected = patternOverrides[editingType?.id] == pattern.name,
-                                onPlay = { triggerVibration(context, 500) },
+                                onPlay = { 
+                                    // In a real scenario, we would trigger the full pattern.
+                                    triggerVibration(context, 500) 
+                                },
                                 onClick = {
                                     editingType?.let { patternOverrides[it.id] = pattern.name }
                                     showSheet = false

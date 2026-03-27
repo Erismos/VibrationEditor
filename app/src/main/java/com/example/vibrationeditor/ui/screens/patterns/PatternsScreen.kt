@@ -1,5 +1,6 @@
 package com.example.vibrationeditor.ui.screens.patterns
 
+import android.media.AudioAttributes
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -125,12 +126,16 @@ fun PatternCard(pattern: Pattern) {
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     // Android 8+ (API 26+)
+                    val audioAttributes = AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .build()
                     if (vibrator.hasAmplitudeControl()) {
                         // Amplitude
-                        vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, pattern.amplitudes, -1))
+                        vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, pattern.amplitudes, -1), audioAttributes)
                     } else {
                         // No amplitude
-                        vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, -1))
+                        vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, -1), audioAttributes)
                     }
                 } else {
                     // Older versions
