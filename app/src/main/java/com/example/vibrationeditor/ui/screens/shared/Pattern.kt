@@ -1,9 +1,11 @@
 package com.example.vibrationeditor.ui.screens.shared
 
 import android.content.Context
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+@Serializable
 data class Pattern(
     val name: String,
     val timings: LongArray,

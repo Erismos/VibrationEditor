@@ -3,14 +3,21 @@ package com.example.vibrationeditor.ui.screens.studio
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -27,24 +34,84 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vibrationeditor.StableTopAppBar
 import com.example.vibrationeditor.ui.screens.shared.Pattern
+import kotlinx.coroutines.launch
 
 @Composable
-fun Studio() {
+fun Studio(
+    onDirtyStateChanged: (Boolean) -> Unit = {},
+    showUnsavedDialogTrigger: Boolean = false,
+    onDismissDialog: () -> Unit = {}
+) {
     val context = LocalContext.current
-    var pattern by remember {
-        mutableStateOf(
-            Pattern(
-                "Custom Pattern",
-                longArrayOf(200, 400, 200, 400),
-                intArrayOf(100, 255, 150, 200)
-            )
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val defaultPattern = remember {
+        Pattern(
+            "Custom Pattern",
+            longArrayOf(200, 400, 200, 400),
+            intArrayOf(100, 255, 150, 200)
         )
     }
 
+    var pattern by remember { mutableStateOf(defaultPattern) }
+    var originalPattern by remember { mutableStateOf<Pattern?>(defaultPattern) }
+
     var isAddingPoint by remember { mutableStateOf(false) }
     var selectedIndex by remember { mutableIntStateOf(-1) }
+    
+    // Persistence state
+    var loadedPatternName by remember { mutableStateOf<String?>(null) }
+    var showSaveAsDialog by remember { mutableStateOf(false) }
+    var showLoadDialog by remember { mutableStateOf(false) }
+    var showOverwriteConfirm by remember { mutableStateOf(false) }
+    var saveName by remember { mutableStateOf("") }
 
-    Scaffold(topBar = { StableTopAppBar("Studio") }) { innerPadding ->
+    val hasModifications = remember(pattern, originalPattern) {
+        originalPattern != null && pattern != originalPattern
+    }
+
+    // Sync with parent
+    LaunchedEffect(hasModifications) {
+        onDirtyStateChanged(hasModifications)
+    }
+
+    // Handle system back press
+    BackHandler(enabled = hasModifications) {
+        onDismissDialog() // Trigger the global dialog
+    }
+
+    // Helper functions for saving
+    fun performSave(name: String) {
+        try {
+            val allPatterns = Pattern.loadAll(context).toMutableList()
+            val index = allPatterns.indexOfFirst { it.name == name }
+            val newPattern = pattern.copy(name = name)
+            if (index != -1) {
+                allPatterns[index] = newPattern
+            } else {
+                allPatterns.add(newPattern)
+            }
+            Pattern.saveAll(context, allPatterns)
+            
+            pattern = newPattern
+            originalPattern = newPattern.copy()
+            loadedPatternName = name
+            
+            scope.launch {
+                snackbarHostState.showSnackbar("Pattern '$name' saved")
+            }
+        } catch (e: Exception) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Error saving pattern")
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = { StableTopAppBar("Studio") },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
@@ -73,7 +140,7 @@ fun Studio() {
                 onPointAdded = { isAddingPoint = false },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(350.dp)
+                    .height(300.dp)
                     .background(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = MaterialTheme.shapes.medium
@@ -82,7 +149,7 @@ fun Studio() {
             
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Action Row
+            // Tool Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -117,7 +184,46 @@ fun Studio() {
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
-                    Text("Delete")
+                    Text("Delete Point")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Persistence Row: Load, Save, Save As
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showLoadDialog = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Load")
+                }
+
+                Button(
+                    onClick = {
+                        loadedPatternName?.let { performSave(it) }
+                    },
+                    enabled = loadedPatternName != null && hasModifications,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Save")
+                }
+
+                Button(
+                    onClick = { 
+                        saveName = loadedPatternName ?: ""
+                        showSaveAsDialog = true 
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Save As")
                 }
             }
 
@@ -128,6 +234,14 @@ fun Studio() {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Pattern Configuration", style = MaterialTheme.typography.titleMedium)
+                    if (loadedPatternName != null) {
+                        Row {
+                            Text("Current: $loadedPatternName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            if (hasModifications) {
+                                Text(" (modified)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = 4.dp))
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Total Duration: ${pattern.timings.sum()} ms")
                     Text("Segments: ${pattern.timings.size}")
@@ -160,14 +274,11 @@ fun Studio() {
 
                         OutlinedButton(
                             onClick = {
-                                // Reset to a default pattern
-                                pattern = Pattern(
-                                    "Custom Pattern",
-                                    longArrayOf(200, 400, 200, 400),
-                                    intArrayOf(100, 255, 150, 200)
-                                )
+                                pattern = defaultPattern
                                 selectedIndex = -1
                                 isAddingPoint = false
+                                loadedPatternName = null
+                                originalPattern = defaultPattern
                             },
                             modifier = Modifier.weight(1f)
                         ) {
@@ -176,6 +287,96 @@ fun Studio() {
                     }
                 }
             }
+        }
+
+        // --- Dialogs ---
+
+        if (showSaveAsDialog) {
+            AlertDialog(
+                onDismissRequest = { showSaveAsDialog = false },
+                title = { Text("Save Pattern As") },
+                text = {
+                    TextField(
+                        value = saveName,
+                        onValueChange = { saveName = it },
+                        label = { Text("Pattern Name") },
+                        singleLine = true
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val exists = Pattern.loadAll(context).any { it.name == saveName }
+                            if (exists) {
+                                showOverwriteConfirm = true
+                            } else {
+                                performSave(saveName)
+                                showSaveAsDialog = false
+                            }
+                        },
+                        enabled = saveName.isNotBlank()
+                    ) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSaveAsDialog = false }) { Text("Cancel") }
+                }
+            )
+        }
+
+        if (showOverwriteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showOverwriteConfirm = false },
+                title = { Text("Overwrite Pattern?") },
+                text = { Text("A pattern named '$saveName' already exists. Do you want to overwrite it?") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            performSave(saveName)
+                            showOverwriteConfirm = false
+                            showSaveAsDialog = false
+                        }
+                    ) { Text("Overwrite") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showOverwriteConfirm = false }) { Text("Cancel") }
+                }
+            )
+        }
+
+        if (showLoadDialog) {
+            val allPatterns = Pattern.loadAll(context)
+            AlertDialog(
+                onDismissRequest = { showLoadDialog = false },
+                title = { Text("Load Pattern") },
+                text = {
+                    if (allPatterns.isEmpty()) {
+                        Text("No saved patterns found.")
+                    } else {
+                        LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                            items(allPatterns) { p ->
+                                ListItem(
+                                    headlineContent = { Text(p.name) },
+                                    supportingContent = { Text("${p.timings.sum()}ms - ${p.timings.size} segments") },
+                                    modifier = Modifier.clickable {
+                                        pattern = p.copy()
+                                        originalPattern = p.copy()
+                                        loadedPatternName = p.name
+                                        selectedIndex = -1
+                                        showLoadDialog = false
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Pattern '${p.name}' loaded")
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showLoadDialog = false }) { Text("Close") }
+                }
+            )
         }
     }
 }
@@ -191,8 +392,6 @@ fun VibrationEnvelopeEditor(
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
-    
-    // Use a stable reference for the current pattern in the drag handler
     val currentPattern by rememberUpdatedState(pattern)
     val currentOnPatternChange by rememberUpdatedState(onPatternChange)
 
@@ -217,7 +416,6 @@ fun VibrationEnvelopeEditor(
                         val totalTime = totalPatternTime(p)
 
                         if (isAddingPoint) {
-                            // Calculate clicked time and amplitude
                             val clickedTime = ((offset.x - horizontalPadding) / graphWidth * totalTime).toLong().coerceAtLeast(0)
                             val clickedAmplitude = ((height - verticalPadding - offset.y) / graphHeight * maxAmplitude).toInt().coerceIn(0, 255)
                             
@@ -234,7 +432,6 @@ fun VibrationEnvelopeEditor(
                             val newTimings = p.timings.toMutableList()
                             val newAmplitudes = p.amplitudes.toMutableList()
 
-                            // Split logic: insert a 200ms segment at clicked position
                             if (insertIndex < p.timings.size) {
                                 val originalDuration = p.timings[insertIndex]
                                 val timeIntoSegment = clickedTime - accumulatedTime
@@ -310,14 +507,14 @@ fun VibrationEnvelopeEditor(
             for (t in 0..totalTime.toInt() step timeStep) {
                 val x = horizontalPadding + (t / totalTime) * graphWidth
                 if (x > width - horizontalPadding + 1) continue
-                
+
                 drawLine(
                     color = Color.LightGray.copy(alpha = 0.5f),
                     start = Offset(x, verticalPadding),
                     end = Offset(x, height - verticalPadding),
                     strokeWidth = 1f
                 )
-                
+
                 drawText(
                     textMeasurer = textMeasurer,
                     text = "${t}ms",
@@ -344,24 +541,21 @@ fun VibrationEnvelopeEditor(
                 )
             }
 
-            // Draw X and Y axis lines
+            // Draw X and Y origin lines
             drawLine(Color.DarkGray, Offset(horizontalPadding, height - verticalPadding), Offset(width - horizontalPadding, height - verticalPadding), 2f)
             drawLine(Color.DarkGray, Offset(horizontalPadding, verticalPadding), Offset(horizontalPadding, height - verticalPadding), 2f)
 
             // Draw the waveform path
             val path = Path()
             var currentTime = 0f
-            
             path.moveTo(horizontalPadding, height - verticalPadding)
-            
             for (i in pattern.timings.indices) {
                 val duration = pattern.timings[i]
                 val amplitude = pattern.amplitudes[i]
-                
                 val xStart = horizontalPadding + (currentTime / totalTime) * graphWidth
                 val xEnd = horizontalPadding + ((currentTime + duration) / totalTime) * graphWidth
                 val y = height - verticalPadding - (amplitude / maxAmplitude) * graphHeight
-                
+
                 if (i == selectedIndex) {
                     drawRect(
                         color = Color.Blue.copy(alpha = 0.1f),
@@ -372,33 +566,27 @@ fun VibrationEnvelopeEditor(
 
                 path.lineTo(xStart, y)
                 path.lineTo(xEnd, y)
-                
+
                 drawCircle(
                     color = if (i == selectedIndex) Color.Red else Color.Blue,
                     radius = if (i == selectedIndex) 10f else 6f,
                     center = Offset((xStart + xEnd) / 2f, y)
                 )
-                
+
                 currentTime += duration
             }
-            val lastX = horizontalPadding + (currentTime / totalTime) * graphWidth
-            path.lineTo(lastX, height - verticalPadding)
-            
-            drawPath(path, Color.Blue, style = Stroke(width = 4f))
+            path.lineTo(horizontalPadding + (currentTime / totalTime) * graphWidth, height - verticalPadding)
+            drawPath(path, Color.Blue, style = Stroke(4f))
         }
     }
 }
 
-// Helper extension functions
 fun LongArray.toMutableList(): MutableList<Long> = this.toList().toMutableList()
 fun IntArray.toMutableList(): MutableList<Int> = this.toList().toMutableList()
 
-
-
-
 // TODO next nice additions:
-//Save and Import and link to the other tabs
-//-Ask to save when leaving with modifications
+//Import and links from the other tabs
+//- Zoom and adaptive time text
 // - A bar that moves when playing
 // - notifications about unsupported stuff
 //   - Other windows of types of vibration edits
