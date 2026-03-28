@@ -188,45 +188,6 @@ fun Studio(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Persistence Row: Load, Save, Save As
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { showLoadDialog = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Folder, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Load")
-                }
-
-                Button(
-                    onClick = {
-                        loadedPatternName?.let { performSave(it) }
-                    },
-                    enabled = loadedPatternName != null && hasModifications,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Save, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Save")
-                }
-
-                Button(
-                    onClick = { 
-                        saveName = loadedPatternName ?: ""
-                        showSaveAsDialog = true 
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Save As")
-                }
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
             
             Card(
@@ -248,42 +209,62 @@ fun Studio(
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
+                    // Row for persistence: Load, Save, Save As
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(
-                            onClick = {
-                                val vibrator = context.getSystemService(Vibrator::class.java)
-
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    if (vibrator.hasAmplitudeControl()) {
-                                        vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, pattern.amplitudes, -1))
-                                    } else {
-                                        vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, -1))
-                                    }
-                                } else {
-                                    @Suppress("DEPRECATION")
-                                    vibrator.vibrate(pattern.timings, -1)
-                                }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Play")
-                        }
-
                         OutlinedButton(
-                            onClick = {
-                                pattern = defaultPattern
-                                selectedIndex = -1
-                                isAddingPoint = false
-                                loadedPatternName = null
-                                originalPattern = defaultPattern
+                            onClick = { showLoadDialog = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Load")
+                        }
+
+                        Button(
+                            onClick = { loadedPatternName?.let { performSave(it) } },
+                            enabled = loadedPatternName != null && hasModifications,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Save")
+                        }
+
+                        Button(
+                            onClick = { 
+                                saveName = loadedPatternName ?: ""
+                                showSaveAsDialog = true 
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Reset")
+                            Text("Save As")
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Final row for Play
+                    Button(
+                        onClick = {
+                            val vibrator = context.getSystemService(Vibrator::class.java)
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                if (vibrator.hasAmplitudeControl()) {
+                                    vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, pattern.amplitudes, -1))
+                                } else {
+                                    vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, -1))
+                                }
+                            } else {
+                                @Suppress("DEPRECATION")
+                                vibrator.vibrate(pattern.timings, -1)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Play")
                     }
                 }
             }
@@ -584,7 +565,7 @@ fun VibrationEnvelopeEditor(
 fun LongArray.toMutableList(): MutableList<Long> = this.toList().toMutableList()
 fun IntArray.toMutableList(): MutableList<Int> = this.toList().toMutableList()
 
-// TODO next nice additions:
+// do not remove this todo section TODO next nice additions:
 //Import and links from the other tabs
 //- Zoom and adaptive time text
 // - A bar that moves when playing
