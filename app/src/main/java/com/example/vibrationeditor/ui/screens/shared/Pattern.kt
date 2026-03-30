@@ -1,6 +1,9 @@
 package com.example.vibrationeditor.ui.screens.shared
 
 import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -33,6 +36,26 @@ data class Pattern(
             }
         }
     }
+
+    fun playPattern(context: Context) {
+        val vibrator = context.getSystemService(Vibrator::class.java)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Android 8+ (API 26+)
+            if (vibrator.hasAmplitudeControl()) {
+                // Amplitude
+                vibrator.vibrate(VibrationEffect.createWaveform(this.timings, this.amplitudes, -1))
+            } else {
+                // No amplitude
+                vibrator.vibrate(VibrationEffect.createWaveform(this.timings, -1))
+            }
+        } else {
+            // Older versions
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(200)
+        }
+    }
+
     // Native methods
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

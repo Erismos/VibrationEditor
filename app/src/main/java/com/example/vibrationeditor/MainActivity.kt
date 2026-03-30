@@ -143,7 +143,9 @@ fun VibrationEditorApp() {
                     onDismissDialog = { showUnsavedDialog = true }
                 ) 
             }
-            composable(AppDestinations.PATTERNS.route) { PatternsScreen() }
+            composable(AppDestinations.PATTERNS.route) {
+                PatternsScreen(navigateTo = navigateTo)
+            }
             composable(AppDestinations.APPLICATIONS.route) { ApplicationsScreen() }
         }
 
