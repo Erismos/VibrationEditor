@@ -1,17 +1,11 @@
 package com.example.vibrationeditor
 
-import android.app.AlertDialog
 import android.content.Context
-import android.media.AudioAttributes
 import android.os.Build
 import android.os.Bundle
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
-import android.widget.Button
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -48,6 +42,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.vibrationeditor.ui.screens.applications.ApplicationsScreen
 import com.example.vibrationeditor.ui.screens.patterns.PatternsScreen
+import com.example.vibrationeditor.ui.screens.shared.AppMapping
+import com.example.vibrationeditor.ui.screens.shared.Pattern
 import com.example.vibrationeditor.ui.screens.studio.Studio
 import com.example.vibrationeditor.ui.theme.VibrationEditorTheme
 
@@ -77,7 +73,37 @@ class VibrationNotificationListener : NotificationListenerService() {
         instance = null
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification?) {}
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        val sbnNotNull = sbn ?: return
+        val packageName = sbnNotNull.packageName
+        
+        // On ignore les notifications de notre propre application pour éviter les boucles
+        if (packageName == this.packageName) return
+
+        // Récupération du canal (API 26+)
+        val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            sbnNotNull.notification.channelId ?: "default"
+        } else {
+            "default"
+        }
+
+        Log.d("VibrationEditor", "Notification reçue: $packageName (canal: $channelId)")
+
+        // 1. Charger les mappings sauvegardés
+        val allMappings = AppMapping.loadAll(this)
+        val appMapping = allMappings[packageName] ?: return
+
+        // 2. Trouver le pattern associé (canal spécifique ou global pour l'app)
+        val patternName = appMapping.channelMappings[channelId] ?: appMapping.channelMappings["default"] ?: return
+
+        // 3. Charger le pattern et le jouer
+        val allPatterns = Pattern.loadAll(this)
+        val pattern = allPatterns.find { it.name == patternName } ?: return
+
+        Log.d("VibrationEditor", "Déclenchement du pattern: $patternName")
+        pattern.play(this)
+    }
+
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {}
 }
 
@@ -201,36 +227,11 @@ fun StableTopAppBar(title: String) {
     }
 }
 
-/** Studio screen placeholder. */
-
 /**
- * Triggers a one-shot vibration using the appropriate API for the device SDK.
- *
- * @param context Context used to get the vibrator service.
- * @param duration Vibration duration in milliseconds.
+ * Triggers a simple one-shot vibration.
  */
 fun triggerVibration(context: Context, duration: Long = 500) {
-    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-        vibratorManager.defaultVibrator
-    } else {
-        @Suppress("DEPRECATION")
-        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-    }
-
-    if (vibrator.hasVibrator()) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val effect = VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE)
-            val audioAttributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .build()
-            vibrator.vibrate(effect, audioAttributes)
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(duration)
-        }
-    }
+    Pattern("Test", longArrayOf(duration), intArrayOf(255)).play(context)
 }
 
 /** Compose preview entry point. */

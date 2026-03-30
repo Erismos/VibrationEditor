@@ -249,18 +249,7 @@ fun Studio(
                     // Final row for Play
                     Button(
                         onClick = {
-                            val vibrator = context.getSystemService(Vibrator::class.java)
-
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                if (vibrator.hasAmplitudeControl()) {
-                                    vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, pattern.amplitudes, -1))
-                                } else {
-                                    vibrator.vibrate(VibrationEffect.createWaveform(pattern.timings, -1))
-                                }
-                            } else {
-                                @Suppress("DEPRECATION")
-                                vibrator.vibrate(pattern.timings, -1)
-                            }
+                            pattern.play(context)
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {

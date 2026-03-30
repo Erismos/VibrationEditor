@@ -216,7 +216,7 @@ fun PatternsScreen(navigateTo: (AppDestinations) -> Unit) {
                             text = selectedPattern!!.name,
                             style = MaterialTheme.typography.titleLarge
                         )
-                        BottomSheetItem("Jouer", { selectedPattern!!.playPattern(context) })
+                        BottomSheetItem("Jouer", { selectedPattern!!.play(context) })
                         BottomSheetItem("Assigner à une Application", { /* assign */ })
                         BottomSheetItem("Modifier dans le Studio", { /* assign */ })
                         BottomSheetItem("Supprimer", { showCreateDialog = false; showDeleteDialog = true }, Color.Red)
@@ -275,7 +275,7 @@ fun PatternCard(pattern: Pattern, onClick: () -> Unit) {
                 fontSize = 16.sp
             )
 
-            Button(onClick = { pattern.playPattern(context) }) {
+            Button(onClick = { pattern.play(context) }) {
                 Icon(
                     Icons.Default.PlayArrow,
                     "Lire"

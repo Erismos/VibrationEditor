@@ -1,9 +1,11 @@
 package com.example.vibrationeditor.ui.screens.shared
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.VibratorManager
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -15,6 +17,38 @@ data class Pattern(
     val amplitudes: IntArray
 ) {
     fun toJson(): String = Json.encodeToString(this)
+
+    /**
+     * Plays this vibration pattern on the device.
+     */
+    fun play(context: Context) {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            manager?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+
+        if (vibrator == null || !vibrator.hasVibrator()) return
+
+        val audioAttributes = AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val effect = if (vibrator.hasAmplitudeControl()) {
+                VibrationEffect.createWaveform(timings, amplitudes, -1)
+            } else {
+                VibrationEffect.createWaveform(timings, -1)
+            }
+            vibrator.vibrate(effect, audioAttributes)
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(timings, -1)
+        }
+    }
 
     // Static methods
     companion object {
@@ -34,25 +68,6 @@ data class Pattern(
             } catch (e: Exception) {
                 emptyList()
             }
-        }
-    }
-
-    fun playPattern(context: Context) {
-        val vibrator = context.getSystemService(Vibrator::class.java)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Android 8+ (API 26+)
-            if (vibrator.hasAmplitudeControl()) {
-                // Amplitude
-                vibrator.vibrate(VibrationEffect.createWaveform(this.timings, this.amplitudes, -1))
-            } else {
-                // No amplitude
-                vibrator.vibrate(VibrationEffect.createWaveform(this.timings, -1))
-            }
-        } else {
-            // Older versions
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(200)
         }
     }
 

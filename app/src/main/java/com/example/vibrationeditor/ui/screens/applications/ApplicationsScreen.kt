@@ -76,6 +76,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.vibrationeditor.VibrationNotificationListener
 import com.example.vibrationeditor.triggerVibration
+import com.example.vibrationeditor.ui.screens.shared.AppMapping
 import com.example.vibrationeditor.ui.screens.shared.Pattern
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -217,10 +218,17 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
     var isPermissionGranted by remember { mutableStateOf(isNotificationServiceEnabled(context)) }
     var isRestricted by remember { mutableStateOf(false) }
 
+    // Persistent mappings storage
+    val allMappings = remember { AppMapping.loadAll(context).toMutableMap() }
+    val currentAppMapping = remember(app.packageName) {
+        mutableStateMapOf<String, String>().apply {
+            putAll(allMappings[app.packageName]?.channelMappings ?: emptyMap())
+        }
+    }
+
     // Gestion de la sélection du pattern
     var showSheet by remember { mutableStateOf(false) }
     var editingType by remember { mutableStateOf<NotificationType?>(null) }
-    val patternOverrides = remember { mutableStateMapOf<String, String>() }
 
     // Use the Pattern data class for available options.
     val availablePatterns = remember { Pattern.loadAll(context) }
@@ -254,8 +262,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                 // Attempts to query app-specific channels (may be restricted).
                 val channels =
                     listener.getNotificationChannels(app.packageName, Process.myUserHandle())
-                Log.d("VibrationEditor", "Canaux pour ${app.packageName} : ${channels?.size ?: "null"}")
-
+                
                 value = if (channels.isNullOrEmpty()) {
                     listOf(NotificationType("default", "Toutes les notifications"))
                 } else {
@@ -263,12 +270,9 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                 }
                 isRestricted = false
             } catch (e: SecurityException) {
-                // Android often blocks this for third-party apps.
-                Log.w("VibrationEditor", "L'accès aux canaux de ${app.packageName} est restreint par Android.")
                 isRestricted = true
                 value = listOf(NotificationType("default", "Toutes les notifications"))
             } catch (e: Exception) {
-                Log.e("VibrationEditor", "Erreur lors de la récupération des canaux", e)
                 value = listOf(NotificationType("default", "Toutes les notifications"))
             }
         } else {
@@ -314,7 +318,6 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                     context.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
                 }
             } else if (listener == null) {
-                // Service is granted but not connected yet.
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
                     modifier = Modifier.padding(bottom = 16.dp)
@@ -355,7 +358,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
 
             LazyColumn {
                 items(notificationTypes) { type ->
-                    val currentPattern = patternOverrides[type.id] ?: "Par défaut"
+                    val currentPattern = currentAppMapping[type.id] ?: "Par défaut"
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -403,30 +406,37 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                     )
 
                     LazyColumn {
-                        // Default behavior option.
                         item {
                             PatternOptionRow(
                                 name = "Par défaut",
-                                isSelected = (patternOverrides[editingType?.id] ?: "Par défaut") == "Par défaut",
+                                isSelected = (currentAppMapping[editingType?.id] ?: "Par défaut") == "Par défaut",
                                 onPlay = { triggerVibration(context, 200) },
                                 onClick = {
-                                    editingType?.let { patternOverrides.remove(it.id) }
+                                    editingType?.let { type ->
+                                        currentAppMapping.remove(type.id)
+                                        // Save updated mapping
+                                        allMappings[app.packageName] = AppMapping(app.packageName, currentAppMapping.toMap())
+                                        AppMapping.saveAll(context, allMappings)
+                                    }
                                     showSheet = false
                                 }
                             )
                         }
 
-                        // Real patterns from storage.
                         items(availablePatterns) { pattern ->
                             PatternOptionRow(
                                 name = pattern.name,
-                                isSelected = patternOverrides[editingType?.id] == pattern.name,
+                                isSelected = currentAppMapping[editingType?.id] == pattern.name,
                                 onPlay = { 
-                                    // In a real scenario, we would trigger the full pattern.
-                                    triggerVibration(context, 500) 
+                                    pattern.play(context)
                                 },
                                 onClick = {
-                                    editingType?.let { patternOverrides[it.id] = pattern.name }
+                                    editingType?.let { type ->
+                                        currentAppMapping[type.id] = pattern.name
+                                        // Save updated mapping
+                                        allMappings[app.packageName] = AppMapping(app.packageName, currentAppMapping.toMap())
+                                        AppMapping.saveAll(context, allMappings)
+                                    }
                                     showSheet = false
                                 }
                             )
