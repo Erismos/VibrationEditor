@@ -1,5 +1,6 @@
 package com.example.vibrationeditor
 
+import android.app.AlertDialog
 import android.content.Context
 import android.media.AudioAttributes
 import android.os.Build
@@ -10,6 +11,7 @@ import android.os.VibratorManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import android.widget.Button
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,15 +20,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -99,6 +106,24 @@ fun VibrationEditorApp() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
+    // Global state for unsaved changes in Studio
+    var isStudioDirty by remember { mutableStateOf(false) }
+    var pendingNavigationDestination by remember { mutableStateOf<AppDestinations?>(null) }
+    var showUnsavedDialog by remember { mutableStateOf(false) }
+
+    val navigateTo = { destination: AppDestinations ->
+        if (isStudioDirty && currentDestination?.route == AppDestinations.STUDIO.route) {
+            pendingNavigationDestination = destination
+            showUnsavedDialog = true
+        } else {
+            navController.navigate(destination.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestinations.entries.forEach { destination ->
@@ -106,21 +131,51 @@ fun VibrationEditorApp() {
                     icon = { Icon(painterResource(destination.icon), contentDescription = destination.label) },
                     label = { Text(destination.label) },
                     selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true,
-                    onClick = {
-                        navController.navigate(destination.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    onClick = { navigateTo(destination) }
                 )
             }
         }
     ) {
         NavHost(navController = navController, startDestination = AppDestinations.PATTERNS.route, modifier = Modifier.fillMaxSize()) {
-            composable(AppDestinations.STUDIO.route) { Studio() }
-            composable(AppDestinations.PATTERNS.route) { PatternsScreen() }
+            composable(AppDestinations.STUDIO.route) { 
+                Studio(
+                    onDirtyStateChanged = { isStudioDirty = it },
+                    onDismissDialog = { showUnsavedDialog = true }
+                ) 
+            }
+            composable(AppDestinations.PATTERNS.route) {
+                PatternsScreen(navigateTo = navigateTo)
+            }
             composable(AppDestinations.APPLICATIONS.route) { ApplicationsScreen() }
+        }
+
+        if (showUnsavedDialog) {
+            AlertDialog(
+                onDismissRequest = { showUnsavedDialog = false },
+                title = { Text("Unsaved Changes") },
+                text = { Text("You have unsaved modifications in the Studio. Do you want to discard them and leave?") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showUnsavedDialog = false
+                            isStudioDirty = false // Allow navigation
+                            pendingNavigationDestination?.let { dest ->
+                                navController.navigate(dest.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Discard & Leave") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUnsavedDialog = false }) { Text("Stay") }
+                }
+            )
         }
     }
 }
