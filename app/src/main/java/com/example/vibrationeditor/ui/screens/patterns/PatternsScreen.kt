@@ -1,5 +1,7 @@
 package com.example.vibrationeditor.ui.screens.patterns
 
+import android.annotation.SuppressLint
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -25,6 +30,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,11 +53,14 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -60,6 +69,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.vibrationeditor.AppDestinations
 import com.example.vibrationeditor.ui.screens.shared.Pattern
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Patterns screen listing available patterns and details.
@@ -239,12 +250,14 @@ fun PatternsScreen(
                             isSelected = pattern in selectedPatterns,
                             isSelectionMode = isSelectionMode,
                             onClick = {
+                                // add it to selected patterns if on selection mode
                                 if (isSelectionMode) {
                                     selectedPatterns = if (pattern in selectedPatterns) {
                                         selectedPatterns - pattern
                                     } else {
                                         selectedPatterns + pattern
                                     }
+                                // else open pattern actions
                                 } else {
                                     selectedPattern = pattern
                                     showPatternActions = true
@@ -280,8 +293,8 @@ fun PatternsScreen(
                         ListItem(
                             headlineContent = { Text("Jouer") },
                             leadingContent = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
-                            modifier = Modifier.clickable { 
-                                selectedPattern!!.play(context) 
+                            modifier = Modifier.clickable {
+                                selectedPattern!!.play(context)
                             }
                         )
                         ListItem(
@@ -357,7 +370,11 @@ fun PatternCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    var elapsedTime by remember { mutableLongStateOf(0L) }
+    var playId by remember { mutableStateOf(0) }
+
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     Card(
         modifier = Modifier
@@ -392,8 +409,34 @@ fun PatternCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            PatternBarsPreview(
+                pattern = pattern,
+                elapsedTime = elapsedTime,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
 
-            IconButton(onClick = { pattern.play(context) }) {
+            IconButton(onClick = {
+                elapsedTime = 0L
+                playId++
+                val currentPlayId = playId
+                val startTime = System.currentTimeMillis()
+
+                pattern.play(context)
+
+                scope.launch {
+                    val totalDuration = pattern.timings.sum()
+
+                    while(elapsedTime < totalDuration) {
+                        if (playId != currentPlayId) return@launch
+                        elapsedTime = System.currentTimeMillis() - startTime
+                        delay(16L)
+                    }
+
+                    elapsedTime = 0L
+                }
+            }) {
                 Icon(
                     Icons.Default.PlayArrow,
                     contentDescription = "Lire",
@@ -491,4 +534,57 @@ fun DeleteMultiplePatternDialog(
             }
         }
     )
+}
+
+/**
+ * Create a bar representation of a pattern
+ */
+@Composable
+fun PatternBarsPreview(
+    pattern: Pattern,
+    elapsedTime: Long = 0L,
+    @SuppressLint("ModifierParameter") modifier: Modifier = Modifier,
+    barColor: Color = MaterialTheme.colorScheme.primary
+) {
+    val msPerBar = 100L
+    val maxAmplitude = 255f
+
+    val bars = remember(pattern) {
+        val result = mutableListOf<Float>()
+        for (i in pattern.timings.indices) {
+            val duration = pattern.timings[i]
+            val amplitude = pattern.amplitudes[i]
+            val numBars = (duration / msPerBar).coerceAtLeast(1)
+            repeat(numBars.toInt()) {
+                result.add(amplitude / maxAmplitude)
+            }
+        }
+        result
+    }
+
+    val activeBarIndex = (elapsedTime / msPerBar).toInt()
+
+    Row(
+        modifier = modifier.height(40.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        bars.forEachIndexed { index, normalizedAmplitude ->
+            val isActive = index <= activeBarIndex && elapsedTime > 0L
+            val color = if (isActive)
+                MaterialTheme.colorScheme.tertiary
+            else
+                barColor
+
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight(normalizedAmplitude.coerceAtLeast(5F / maxAmplitude))
+                    .background(
+                        color = color,
+                        shape = RoundedCornerShape(2.dp)
+                    )
+            )
+        }
+    }
 }
