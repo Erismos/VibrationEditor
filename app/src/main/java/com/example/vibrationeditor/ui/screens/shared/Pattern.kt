@@ -11,13 +11,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
- * Data class representing a vibration pattern.
- *
- * @property name Unique name of the pattern.
- * @property timings Array of durations for each segment in milliseconds.
- * @property amplitudes Array of intensities for each segment (0-255).
- */
 @Serializable
 data class Pattern(
     val name: String,
@@ -27,37 +20,29 @@ data class Pattern(
     fun toJson(): String = Json.encodeToString(this)
 
     /**
-     * Plays this vibration pattern on the device.
+     * Joue ce pattern de vibration sur l'appareil.
      */
     fun play(context: Context) {
-        if (timings.isEmpty()) {
-            Log.w("VibrationEditor", "Pattern '$name' is empty, skipping.")
-            return
-        }
+        if (timings.isEmpty()) return
 
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            manager.defaultVibrator
+            val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            manager?.defaultVibrator
         } else {
             @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
 
-        if (!vibrator.hasVibrator()) {
-            Log.e("VibrationEditor", "Device has no vibrator.")
-            return
-        }
+        if (vibrator == null || !vibrator.hasVibrator()) return
 
-        // Cancel any ongoing vibration to clear the way for this pattern
         vibrator.cancel()
 
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .setUsage(AudioAttributes.USAGE_ALARM) // High priority
+            .setUsage(AudioAttributes.USAGE_ALARM)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Adjust amplitudes array to match timings array length
             val safeAmplitudes = if (amplitudes.size >= timings.size) {
                 amplitudes.sliceArray(timings.indices)
             } else {
@@ -76,39 +61,59 @@ data class Pattern(
         }
     }
 
-    // Static methods
     companion object {
+        private const val FILE_NAME = "patterns.json"
+
+        /** Patterns par défaut injectés uniquement au premier lancement. */
+        private val defaultPatterns = listOf(
+            Pattern("Court", longArrayOf(0, 100), intArrayOf(0, 255)),
+            Pattern("Double", longArrayOf(0, 100, 100, 100), intArrayOf(0, 255, 0, 255)),
+            Pattern("Alternative", longArrayOf(0, 500, 50, 500, 500, 500), intArrayOf(0, 255, 0, 10, 0, 255))
+        )
+
         fun fromJson(json: String): Pattern = Json.decodeFromString(json)
 
+        /**
+         * Sauvegarde la liste complète des patterns.
+         */
         fun saveAll(context: Context, patterns: List<Pattern>) {
-            val json = Json.encodeToString(patterns)
-            context.openFileOutput("patterns.json", Context.MODE_PRIVATE).use {
-                it.write(json.toByteArray())
+            try {
+                val json = Json.encodeToString(patterns)
+                context.openFileOutput(FILE_NAME, Context.MODE_PRIVATE).use {
+                    it.write(json.toByteArray())
+                }
+            } catch (e: Exception) {
+                Log.e("Pattern", "Erreur sauvegarde", e)
             }
         }
 
+        /**
+         * Charge les patterns. Si le fichier n'existe pas, initialise avec les défauts.
+         */
         fun loadAll(context: Context): List<Pattern> {
+            val fileExists = context.getFileStreamPath(FILE_NAME).exists()
+            
+            if (!fileExists) {
+                // Premier lancement : on initialise avec les patterns par défaut
+                val initial = defaultPatterns.sortedBy { it.name }
+                saveAll(context, initial)
+                return initial
+            }
+
             return try {
-                val json = context.openFileInput("patterns.json").bufferedReader().readText()
-                Json.decodeFromString(json)
+                val json = context.openFileInput(FILE_NAME).bufferedReader().readText()
+                Json.decodeFromString<List<Pattern>>(json)
             } catch (e: Exception) {
                 emptyList()
             }
         }
     }
 
-    // Native methods
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
-
         other as Pattern
-
-        if (name != other.name) return false
-        if (!timings.contentEquals(other.timings)) return false
-        if (!amplitudes.contentEquals(other.amplitudes)) return false
-
-        return true
+        return name == other.name && timings.contentEquals(other.timings) && amplitudes.contentEquals(other.amplitudes)
     }
 
     override fun hashCode(): Int {

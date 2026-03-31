@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,22 +19,25 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -50,23 +55,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
 import com.example.vibrationeditor.AppDestinations
 import com.example.vibrationeditor.ui.screens.shared.Pattern
 
-// Test patterns
-val testPatterns = listOf(
-    Pattern("Court", longArrayOf(0, 100), intArrayOf(0, 255)),
-    Pattern("Double", longArrayOf(0, 100, 100, 100), intArrayOf(0, 255, 0, 255)),
-    Pattern("Alternative", longArrayOf(0, 500, 50, 500, 500, 500), intArrayOf(0, 255, 0, 10, 0, 255))
-)
-
-@OptIn(ExperimentalMaterial3Api::class)
 /**
  * Patterns screen listing available patterns and details.
+ *
+ * @param navigateTo Callback to navigate between screens.
+ * @param onEditPattern Callback to start editing a specific pattern in the Studio.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PatternsScreen(navigateTo: (AppDestinations) -> Unit) {
+fun PatternsScreen(
+    navigateTo: (AppDestinations) -> Unit,
+    onEditPattern: (Pattern) -> Unit
+) {
     val context = LocalContext.current
     var allPatterns by remember { mutableStateOf<List<Pattern>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
@@ -89,8 +92,9 @@ fun PatternsScreen(navigateTo: (AppDestinations) -> Unit) {
         }
     }
 
+    // Refresh patterns from storage. Default patterns are handled inside Pattern.loadAll.
     LaunchedEffect(Unit) {
-        allPatterns = Pattern.loadAll(context).ifEmpty { testPatterns }
+        allPatterns = Pattern.loadAll(context)
         isLoading = false
     }
 
@@ -161,12 +165,12 @@ fun PatternsScreen(navigateTo: (AppDestinations) -> Unit) {
                 Icon(Icons.Default.Add, contentDescription = "Ajouter")
             }
         }
-        ) { innerPadding ->
+    ) { innerPadding ->
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else  {
+        } else {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.padding(innerPadding),
@@ -175,16 +179,22 @@ fun PatternsScreen(navigateTo: (AppDestinations) -> Unit) {
             ) {
                 if (filteredPatterns.isEmpty()) {
                     item {
-                        Box(
+                        Column(
                             modifier = Modifier
-                                .fillMaxWidth(),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .padding(top = 64.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Aucun pattern disponible\n" +
-                                        "\n" +
-                                        "Créez ou importez des patterns en appuyant sur '+' en bas à droite de l'écran",
-                                style = MaterialTheme.typography.headlineMedium,
+                                text = "Aucun pattern disponible",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "Créez ou importez des patterns en appuyant sur '+' en bas à droite de l'écran",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
                             )
@@ -211,29 +221,51 @@ fun PatternsScreen(navigateTo: (AppDestinations) -> Unit) {
                         modifier = Modifier
                             .padding(16.dp)
                             .fillMaxWidth()
+                            .padding(bottom = 32.dp)
                     ) {
                         Text(
                             text = selectedPattern!!.name,
-                            style = MaterialTheme.typography.titleLarge
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(bottom = 16.dp)
                         )
-                        BottomSheetItem("Jouer", { selectedPattern!!.play(context) })
-                        BottomSheetItem("Assigner à une Application", { /* assign */ })
-                        BottomSheetItem("Modifier dans le Studio", { /* assign */ })
-                        BottomSheetItem("Supprimer", { showCreateDialog = false; showDeleteDialog = true }, Color.Red)
+                        
+                        ListItem(
+                            headlineContent = { Text("Jouer") },
+                            leadingContent = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                            modifier = Modifier.clickable { 
+                                selectedPattern!!.play(context) 
+                            }
+                        )
+                        ListItem(
+                            headlineContent = { Text("Modifier") },
+                            leadingContent = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            modifier = Modifier.clickable {
+                                onEditPattern(selectedPattern!!)
+                                showPatternActions = false
+                                selectedPattern = null
+                            }
+                        )
+                        ListItem(
+                            headlineContent = { Text("Supprimer") },
+                            leadingContent = { Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red) },
+                            modifier = Modifier.clickable { 
+                                showPatternActions = false
+                                showDeleteDialog = true 
+                            }
+                        )
                     }
                 }
             }
 
-            if (showDeleteDialog) {
+            if (showDeleteDialog && selectedPattern != null) {
                 DeletePatternDialog(
-                    pattern = selectedPattern,
+                    pattern = selectedPattern!!,
                     onConfirm = {
-                        // delete pattern
-                        allPatterns = allPatterns.filter { it != selectedPattern }
-
+                        val updatedList = allPatterns.filter { it.name != selectedPattern!!.name }
+                        Pattern.saveAll(context, updatedList)
+                        allPatterns = updatedList
                         selectedPattern = null
                         showDeleteDialog = false
-                        showPatternActions = false
                     },
                     onDismiss = { showDeleteDialog = false }
                 )
@@ -242,7 +274,6 @@ fun PatternsScreen(navigateTo: (AppDestinations) -> Unit) {
             if (showCreateDialog) {
                 CreatePatternDialog(
                     onCreate = { showCreateDialog = false; navigateTo(AppDestinations.STUDIO) },
-                    onImport = { /* import */},
                     onDismiss = { showCreateDialog = false }
                 )
             }
@@ -252,33 +283,40 @@ fun PatternsScreen(navigateTo: (AppDestinations) -> Unit) {
 
 /**
  * Create a card representing a pattern
- *
- * @param pattern Pattern.
  */
 @Composable
 fun PatternCard(pattern: Pattern, onClick: () -> Unit) {
     val context = LocalContext.current
 
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier
                 .padding(16.dp)
-                .clickable(onClick = onClick)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = pattern.name,
-                fontSize = 16.sp
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = pattern.name,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = "${pattern.timings.sum()}ms",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
-            Button(onClick = { pattern.play(context) }) {
+            IconButton(onClick = { pattern.play(context) }) {
                 Icon(
                     Icons.Default.PlayArrow,
-                    "Lire"
+                    contentDescription = "Lire",
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -286,94 +324,54 @@ fun PatternCard(pattern: Pattern, onClick: () -> Unit) {
 }
 
 /**
- * Create an element of the sheet for pattern actions
- *
- * @param text Action name.
- * @param onClick Action itself.
- * @param color Text color.
- */
-@Composable
-fun BottomSheetItem(
-    text: String,
-    onClick: () -> Unit,
-    color: Color = Color.Unspecified
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(text = text, color = color)
-    }
-}
-
-/**
  * Manage pattern creation dialog
- *
- * @param onCreate Create a pattern in the studio.
- * @param onImport Import a pattern.
- * @param onDismiss Close dialog.
  */
 @Composable
 fun CreatePatternDialog(
     onCreate: () -> Unit,
-    onImport: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Ajouter un pattern") },
         text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = onCreate,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Créer dans le studio")
-                }
-
-                Button(
-                    onClick = onImport,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Importer un fichier")
-                }
-
-                OutlinedButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Annuler")
-                }
+            Text("Voulez-vous créer un nouveau pattern dans le studio ?")
+        },
+        confirmButton = {
+            Button(onClick = onCreate) {
+                Text("Créer")
             }
         },
-        confirmButton = {}
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        }
     )
 }
 
 @Composable
 fun DeletePatternDialog(
-    pattern: Pattern?,
+    pattern: Pattern,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
-        onDismissRequest = onConfirm,
+        onDismissRequest = onDismiss,
         title = { Text("Supprimer le pattern") },
-        text = { Text("Êtes-vous sûr de vouloir supprimer \"${pattern!!.name}\" ?") },
+        text = { Text("Êtes-vous sûr de vouloir supprimer \"${pattern.name}\" ?") },
         confirmButton = {
-            Button(onClick = onConfirm) {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
                 Text("Supprimer")
             }
         },
         dismissButton = {
-            // cancel
-            OutlinedButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss) {
                 Text("Annuler")
             }
         }

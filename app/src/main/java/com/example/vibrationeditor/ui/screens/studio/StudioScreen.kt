@@ -1,9 +1,5 @@
 package com.example.vibrationeditor.ui.screens.studio
 
-import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,8 +35,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun Studio(
+    patternToEdit: Pattern? = null,
     onDirtyStateChanged: (Boolean) -> Unit = {},
-    showUnsavedDialogTrigger: Boolean = false,
     onDismissDialog: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -56,18 +52,28 @@ fun Studio(
         )
     }
 
-    var pattern by remember { mutableStateOf(defaultPattern) }
-    var originalPattern by remember { mutableStateOf<Pattern?>(defaultPattern) }
+    var pattern by remember { mutableStateOf(patternToEdit ?: defaultPattern) }
+    var originalPattern by remember { mutableStateOf<Pattern?>(patternToEdit ?: defaultPattern) }
 
     var isAddingPoint by remember { mutableStateOf(false) }
     var selectedIndex by remember { mutableIntStateOf(-1) }
     
     // Persistence state
-    var loadedPatternName by remember { mutableStateOf<String?>(null) }
+    var loadedPatternName by remember { mutableStateOf(patternToEdit?.name) }
     var showSaveAsDialog by remember { mutableStateOf(false) }
     var showLoadDialog by remember { mutableStateOf(false) }
     var showOverwriteConfirm by remember { mutableStateOf(false) }
     var saveName by remember { mutableStateOf("") }
+
+    // Update state if patternToEdit changes (when navigated from PatternsScreen)
+    LaunchedEffect(patternToEdit) {
+        if (patternToEdit != null) {
+            pattern = patternToEdit
+            originalPattern = patternToEdit
+            loadedPatternName = patternToEdit.name
+            selectedIndex = -1
+        }
+    }
 
     val hasModifications = remember(pattern, originalPattern) {
         originalPattern != null && pattern != originalPattern

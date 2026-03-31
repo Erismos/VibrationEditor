@@ -136,12 +136,21 @@ fun VibrationEditorApp() {
     var isStudioDirty by remember { mutableStateOf(false) }
     var pendingNavigationDestination by remember { mutableStateOf<AppDestinations?>(null) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
+    
+    // Pattern currently being edited in the Studio
+    var patternToEdit by remember { mutableStateOf<Pattern?>(null) }
 
     val navigateTo = { destination: AppDestinations ->
         if (isStudioDirty && currentDestination?.route == AppDestinations.STUDIO.route) {
             pendingNavigationDestination = destination
             showUnsavedDialog = true
         } else {
+            // Reset patternToEdit if we are going to Studio directly from the menu
+            // but NOT if we are being redirected by an edit action (handled in navigateToEdit)
+            if (destination != AppDestinations.STUDIO) {
+                patternToEdit = null
+            }
+            
             navController.navigate(destination.route) {
                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                 launchSingleTop = true
@@ -165,12 +174,23 @@ fun VibrationEditorApp() {
         NavHost(navController = navController, startDestination = AppDestinations.PATTERNS.route, modifier = Modifier.fillMaxSize()) {
             composable(AppDestinations.STUDIO.route) { 
                 Studio(
+                    patternToEdit = patternToEdit,
                     onDirtyStateChanged = { isStudioDirty = it },
                     onDismissDialog = { showUnsavedDialog = true }
                 ) 
             }
             composable(AppDestinations.PATTERNS.route) {
-                PatternsScreen(navigateTo = navigateTo)
+                PatternsScreen(
+                    navigateTo = navigateTo,
+                    onEditPattern = { pattern ->
+                        patternToEdit = pattern
+                        navController.navigate(AppDestinations.STUDIO.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
             }
             composable(AppDestinations.APPLICATIONS.route) { ApplicationsScreen() }
         }
@@ -178,14 +198,15 @@ fun VibrationEditorApp() {
         if (showUnsavedDialog) {
             AlertDialog(
                 onDismissRequest = { showUnsavedDialog = false },
-                title = { Text("Unsaved Changes") },
-                text = { Text("You have unsaved modifications in the Studio. Do you want to discard them and leave?") },
+                title = { Text("Changements non sauvegardés") },
+                text = { Text("Vous avez des modifications non sauvegardées dans le Studio. Voulez-vous les ignorer et quitter ?") },
                 confirmButton = {
                     Button(
                         onClick = {
                             showUnsavedDialog = false
-                            isStudioDirty = false // Allow navigation
+                            isStudioDirty = false // Autorise la navigation
                             pendingNavigationDestination?.let { dest ->
+                                patternToEdit = null // Reset editing state
                                 navController.navigate(dest.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -196,10 +217,10 @@ fun VibrationEditorApp() {
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) { Text("Discard & Leave") }
+                    ) { Text("Ignorer et quitter") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showUnsavedDialog = false }) { Text("Stay") }
+                    TextButton(onClick = { showUnsavedDialog = false }) { Text("Rester") }
                 }
             )
         }
