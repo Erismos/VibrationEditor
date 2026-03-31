@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -163,7 +164,11 @@ fun VibrationEditorApp() {
         navigationSuiteItems = {
             AppDestinations.entries.forEach { destination ->
                 item(
-                    icon = { Icon(painterResource(destination.icon), contentDescription = destination.label) },
+                    icon = { Icon(
+                        painterResource(destination.icon),
+                        contentDescription = destination.label,
+                        modifier = Modifier.size(36.dp)
+                    ) },
                     label = { Text(destination.label) },
                     selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true,
                     onClick = { navigateTo(destination) }
