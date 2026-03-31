@@ -5,6 +5,8 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,11 +15,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -45,6 +46,7 @@ fun Studio(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val scrollState = rememberScrollState()
 
     val defaultPattern = remember {
         Pattern(
@@ -70,6 +72,73 @@ fun Studio(
     val hasModifications = remember(pattern, originalPattern) {
         originalPattern != null && pattern != originalPattern
     }
+
+    // Export Launcher
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain"),
+        onResult = { uri ->
+            uri?.let {
+                try {
+                    context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                        val content = pattern.timings.indices.joinToString("\n") { i ->
+                            "${pattern.timings[i]},${pattern.amplitudes[i]}"
+                        }
+                        outputStream.write(content.toByteArray())
+                    }
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Pattern exported successfully")
+                    }
+                } catch (e: Exception) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Error exporting pattern")
+                    }
+                }
+            }
+        }
+    )
+
+    // Import Launcher
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri ->
+            uri?.let {
+                try {
+                    context.contentResolver.openInputStream(it)?.bufferedReader()?.use { reader ->
+                        val lines = reader.readLines()
+                        val timings = mutableListOf<Long>()
+                        val amplitudes = mutableListOf<Int>()
+                        
+                        lines.forEach { line ->
+                            val parts = line.split(",")
+                            if (parts.size == 2) {
+                                timings.add(parts[0].trim().toLong())
+                                amplitudes.add(parts[1].trim().toInt())
+                            }
+                        }
+                        
+                        if (timings.isNotEmpty()) {
+                            val newPattern = Pattern(
+                                name = "Imported Pattern",
+                                timings = timings.toLongArray(),
+                                amplitudes = amplitudes.toIntArray()
+                            )
+                            pattern = newPattern
+                            originalPattern = null // Treat as unsaved
+                            loadedPatternName = null
+                            selectedIndex = -1
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Pattern imported successfully")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Error importing pattern")
+                    }
+                }
+            }
+        }
+    )
 
     // Sync with parent
     LaunchedEffect(hasModifications) {
@@ -118,6 +187,7 @@ fun Studio(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+            // Fixed Top Part
             Text(
                 text = "Vibration Envelope Editor",
                 style = MaterialTheme.typography.titleLarge,
@@ -147,115 +217,157 @@ fun Studio(
                     )
             )
             
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Tool Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Scrollable Bottom Part
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(scrollState)
             ) {
-                Button(
-                    onClick = { isAddingPoint = !isAddingPoint },
-                    modifier = Modifier.weight(1f),
-                    colors = if (isAddingPoint) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary) else ButtonDefaults.buttonColors()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text(if (isAddingPoint) "Cancel" else "Add Point")
-                }
+                Spacer(modifier = Modifier.height(16.dp))
 
-                Button(
-                    onClick = {
-                        if (selectedIndex != -1) {
-                            val newTimings = pattern.timings.toMutableList()
-                            val newAmplitudes = pattern.amplitudes.toMutableList()
-                            newTimings.removeAt(selectedIndex)
-                            newAmplitudes.removeAt(selectedIndex)
-                            pattern = pattern.copy(
-                                timings = newTimings.toLongArray(),
-                                amplitudes = newAmplitudes.toIntArray()
-                            )
-                            selectedIndex = -1
-                        }
-                    },
-                    enabled = selectedIndex != -1,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                // Tool Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Delete Point")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Pattern Configuration", style = MaterialTheme.typography.titleMedium)
-                    if (loadedPatternName != null) {
-                        Row {
-                            Text("Current: $loadedPatternName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                            if (hasModifications) {
-                                Text(" (modified)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = 4.dp))
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Total Duration: ${pattern.timings.sum()} ms")
-                    Text("Segments: ${pattern.timings.size}")
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Row for persistence: Load, Save, Save As
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Button(
+                        onClick = { isAddingPoint = !isAddingPoint },
+                        modifier = Modifier.weight(1f),
+                        colors = if (isAddingPoint) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary) else ButtonDefaults.buttonColors()
                     ) {
-                        OutlinedButton(
-                            onClick = { showLoadDialog = true },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Folder, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Load")
-                        }
-
-                        Button(
-                            onClick = { loadedPatternName?.let { performSave(it) } },
-                            enabled = loadedPatternName != null && hasModifications,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.Save, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Save")
-                        }
-
-                        Button(
-                            onClick = { 
-                                saveName = loadedPatternName ?: ""
-                                showSaveAsDialog = true 
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Save As")
-                        }
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (isAddingPoint) "Cancel" else "Add Point")
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Final row for Play
                     Button(
                         onClick = {
-                            pattern.play(context)
+                            if (selectedIndex != -1) {
+                                val newTimings = pattern.timings.toMutableList()
+                                val newAmplitudes = pattern.amplitudes.toMutableList()
+                                newTimings.removeAt(selectedIndex)
+                                newAmplitudes.removeAt(selectedIndex)
+                                pattern = pattern.copy(
+                                    timings = newTimings.toLongArray(),
+                                    amplitudes = newAmplitudes.toIntArray()
+                                )
+                                selectedIndex = -1
+                            }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        enabled = selectedIndex != -1,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Text("Play")
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Delete Point")
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Pattern Configuration", style = MaterialTheme.typography.titleMedium)
+                        if (loadedPatternName != null) {
+                            Row {
+                                Text("Current: $loadedPatternName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                if (hasModifications) {
+                                    Text(" (modified)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = 4.dp))
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Total Duration: ${pattern.timings.sum()} ms")
+                        Text("Segments: ${pattern.timings.size}")
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Play Button
+                        Button(
+                            onClick = {
+                                pattern.play(context)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Play")
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Row 1: Load, Import, Export
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showLoadDialog = true },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null)
+                                Spacer(Modifier.width(2.dp))
+                                Text("Load", fontSize = 12.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = { importLauncher.launch(arrayOf("text/plain")) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.FileDownload, contentDescription = null)
+                                Spacer(Modifier.width(2.dp))
+                                Text("Import", fontSize = 12.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = { exportLauncher.launch("${loadedPatternName ?: "vibration"}.txt") },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.FileUpload, contentDescription = null)
+                                Spacer(Modifier.width(2.dp))
+                                Text("Export", fontSize = 12.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Row 2: Save, Save As
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { loadedPatternName?.let { performSave(it) } },
+                                enabled = loadedPatternName != null && hasModifications,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Save, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Save")
+                            }
+
+                            Button(
+                                onClick = { 
+                                    saveName = loadedPatternName ?: ""
+                                    showSaveAsDialog = true 
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.SaveAs, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Save As")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                    }
+                }
+                // Extra spacer to ensure we can scroll past the bottom card
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
 
