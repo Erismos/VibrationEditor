@@ -1,6 +1,7 @@
 package com.example.vibrationeditor.ui.screens.patterns
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -26,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -54,7 +58,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.vibrationeditor.AppDestinations
 import com.example.vibrationeditor.ui.screens.shared.Pattern
 
@@ -73,13 +76,18 @@ fun PatternsScreen(
     val context = LocalContext.current
     var allPatterns by remember { mutableStateOf<List<Pattern>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(true) }
-    var isSearchActive by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     var selectedPattern by remember { mutableStateOf<Pattern?>(null) }
+    var selectedPatterns by remember { mutableStateOf<List<Pattern>>(emptyList()) }
+
+    var isLoading by remember { mutableStateOf(true) }
+    var isSearchActive by remember { mutableStateOf(false) }
     var showPatternActions by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showDeleteMultipleDialog by remember { mutableStateOf(false) }
+
+    val isSelectionMode = selectedPatterns.isNotEmpty()
 
     // Keeps list scroll position stable across recompositions.
     val listState = rememberLazyListState()
@@ -107,59 +115,83 @@ fun PatternsScreen(
     Scaffold(
         topBar = {
             Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 4.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (isSearchActive) {
-                        IconButton(onClick = {
-                            isSearchActive = false
-                            searchQuery = ""
-                        }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Retour"
-                            )
+                if (isSelectionMode) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { selectedPatterns = emptyList() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Annuler")
                         }
-                        TextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            modifier = Modifier
-                                .weight(1f)
-                                .focusRequester(focusRequester),
-                            placeholder = { Text("Rechercher...") },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                            ),
-                            singleLine = true
-                        )
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Effacer")
-                            }
-                        }
-                    } else {
                         Text(
-                            text = "Patterns",
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier
-                                .padding(start = 16.dp)
-                                .weight(1f)
+                            text = "${selectedPatterns.size} sélectionné(s)",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleLarge
                         )
-                        IconButton(onClick = { isSearchActive = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "Rechercher")
+                        // Delete all selected patterns
+                        IconButton(onClick = { showDeleteMultipleDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Supprimer")
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isSearchActive) {
+                            IconButton(onClick = {
+                                isSearchActive = false
+                                searchQuery = ""
+                            }) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Retour"
+                                )
+                            }
+                            TextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focusRequester),
+                                placeholder = { Text("Rechercher...") },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    disabledContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                ),
+                                singleLine = true
+                            )
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Effacer")
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "Patterns",
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier
+                                    .padding(start = 16.dp)
+                                    .weight(1f)
+                            )
+                            IconButton(onClick = { isSearchActive = true }) {
+                                Icon(Icons.Default.Search, contentDescription = "Rechercher")
+                            }
                         }
                     }
                 }
             }
         },
+        // Add button
         floatingActionButton = {
             FloatingActionButton(onClick = { showCreateDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Ajouter")
@@ -202,10 +234,26 @@ fun PatternsScreen(
                     }
                 } else {
                     items(filteredPatterns) { pattern ->
-                        PatternCard(pattern = pattern) {
-                            selectedPattern = pattern
-                            showPatternActions = true
-                        }
+                        PatternCard(
+                            pattern = pattern,
+                            isSelected = pattern in selectedPatterns,
+                            isSelectionMode = isSelectionMode,
+                            onClick = {
+                                if (isSelectionMode) {
+                                    selectedPatterns = if (pattern in selectedPatterns) {
+                                        selectedPatterns - pattern
+                                    } else {
+                                        selectedPatterns + pattern
+                                    }
+                                } else {
+                                    selectedPattern = pattern
+                                    showPatternActions = true
+                                }
+                            },
+                            onLongClick = {
+                                selectedPatterns = selectedPatterns + pattern
+                            }
+                        )
                     }
                 }
             }
@@ -257,6 +305,7 @@ fun PatternsScreen(
                 }
             }
 
+            // Dialogs
             if (showDeleteDialog && selectedPattern != null) {
                 DeletePatternDialog(
                     pattern = selectedPattern!!,
@@ -277,6 +326,22 @@ fun PatternsScreen(
                     onDismiss = { showCreateDialog = false }
                 )
             }
+
+            if (showDeleteMultipleDialog && selectedPatterns.isNotEmpty()) {
+                DeleteMultiplePatternDialog(
+                    patterns = selectedPatterns,
+                    onConfirm = {
+                        val updatedList = allPatterns.filter { it !in selectedPatterns }
+                        Pattern.saveAll(context, updatedList)
+                        allPatterns = updatedList
+                        selectedPatterns = emptyList()
+                        showDeleteMultipleDialog = false
+                    },
+                    onDismiss = {
+
+                    }
+                )
+            }
         }
     }
 }
@@ -285,13 +350,22 @@ fun PatternsScreen(
  * Create a card representing a pattern
  */
 @Composable
-fun PatternCard(pattern: Pattern, onClick: () -> Unit) {
+fun PatternCard(
+    pattern: Pattern,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
     val context = LocalContext.current
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Row(
             modifier = Modifier
@@ -300,6 +374,13 @@ fun PatternCard(pattern: Pattern, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = null
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = pattern.name,
@@ -350,6 +431,9 @@ fun CreatePatternDialog(
     )
 }
 
+/**
+ * Manage pattern deletion dialog
+ */
 @Composable
 fun DeletePatternDialog(
     pattern: Pattern,
@@ -360,6 +444,37 @@ fun DeletePatternDialog(
         onDismissRequest = onDismiss,
         title = { Text("Supprimer le pattern") },
         text = { Text("Êtes-vous sûr de vouloir supprimer \"${pattern.name}\" ?") },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("Supprimer")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+/**
+ * Manage multiple pattern deletion dialog
+ */
+@Composable
+fun DeleteMultiplePatternDialog(
+    patterns: List<Pattern>,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Supprimer la sléection de patterns") },
+        text = { Text("Êtes-vous sûr de vouloir supprimer ${patterns.size} patterns ?") },
         confirmButton = {
             Button(
                 onClick = onConfirm,
