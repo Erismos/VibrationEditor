@@ -351,7 +351,7 @@ fun PatternsScreen(
                         showDeleteMultipleDialog = false
                     },
                     onDismiss = {
-
+                        showDeleteMultipleDialog = false
                     }
                 )
             }
