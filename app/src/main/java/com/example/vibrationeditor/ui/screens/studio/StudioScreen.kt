@@ -1,5 +1,9 @@
 package com.example.vibrationeditor.ui.screens.studio
 
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,7 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vibrationeditor.StableTopAppBar
 import com.example.vibrationeditor.ui.screens.shared.Pattern
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.max
 
 @Composable
 fun Studio(
@@ -47,8 +53,8 @@ fun Studio(
     val defaultPattern = remember {
         Pattern(
             "Custom Pattern",
-            longArrayOf(200, 400, 200, 400),
-            intArrayOf(100, 255, 150, 200)
+            longArrayOf(10),
+            intArrayOf(0)
         )
     }
 
@@ -57,6 +63,7 @@ fun Studio(
 
     var isAddingPoint by remember { mutableStateOf(false) }
     var selectedIndex by remember { mutableIntStateOf(-1) }
+    var isPlaying by remember { mutableStateOf(false) }
     
     // Persistence state
     var loadedPatternName by remember { mutableStateOf(patternToEdit?.name) }
@@ -117,8 +124,12 @@ fun Studio(
                         lines.forEach { line ->
                             val parts = line.split(",")
                             if (parts.size == 2) {
-                                timings.add(parts[0].trim().toLong())
-                                amplitudes.add(parts[1].trim().toInt())
+                                try {
+                                    timings.add(parts[0].trim().toLong())
+                                    amplitudes.add(parts[1].trim().toInt())
+                                } catch (e: NumberFormatException) {
+                                    // Skip invalid lines
+                                }
                             }
                         }
                         
@@ -134,6 +145,10 @@ fun Studio(
                             selectedIndex = -1
                             scope.launch {
                                 snackbarHostState.showSnackbar("Pattern imported successfully")
+                            }
+                        } else {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("No valid vibration data found in file")
                             }
                         }
                     }
@@ -207,28 +222,28 @@ fun Studio(
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            VibrationEnvelopeEditor(
-                pattern = pattern,
-                onPatternChange = { pattern = it },
-                selectedIndex = selectedIndex,
-                onSelectedIndexChange = { selectedIndex = it },
-                isAddingPoint = isAddingPoint,
-                onPointAdded = { isAddingPoint = false },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = MaterialTheme.shapes.medium
-                    )
-            )
-            
             // Scrollable Bottom Part
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(scrollState)
             ) {
+                VibrationEnvelopeEditor(
+                    pattern = pattern,
+                    onPatternChange = { pattern = it },
+                    selectedIndex = selectedIndex,
+                    onSelectedIndexChange = { selectedIndex = it },
+                    isAddingPoint = isAddingPoint,
+                    onPointAdded = { isAddingPoint = false },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = MaterialTheme.shapes.medium
+                        )
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Tool Row
@@ -291,16 +306,35 @@ fun Studio(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Play Button
+                        // Play/Stop Button
                         Button(
                             onClick = {
-                                pattern.play(context)
+                                if (isPlaying) {
+                                    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                        val manager = context.getSystemService(android.os.VibratorManager::class.java)
+                                        manager?.defaultVibrator
+                                    } else {
+                                        @Suppress("DEPRECATION")
+                                        context.getSystemService(android.os.Vibrator::class.java)
+                                    }
+                                    vibrator?.cancel()
+                                    isPlaying = false
+                                } else {
+                                    val duration = pattern.timings.sum()
+                                    isPlaying = true
+                                    pattern.play(context)
+                                    scope.launch {
+                                        delay(duration)
+                                        isPlaying = false
+                                    }
+                                }
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = if (isPlaying) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Icon(if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
-                            Text("Play")
+                            Text(if (isPlaying) "Stop" else "Play")
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -498,6 +532,7 @@ fun VibrationEnvelopeEditor(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                // Combined gesture detection
                 .pointerInput(isAddingPoint) {
                     detectTapGestures { offset ->
                         val p = currentPattern
@@ -548,18 +583,39 @@ fun VibrationEnvelopeEditor(
                         } else {
                             var currentTime = 0f
                             var found = false
+                            //first pass to look for nearby points
                             for (i in p.timings.indices) {
                                 val segmentDuration = p.timings[i]
                                 val x = horizontalPadding + (currentTime + segmentDuration / 2f) / totalTime * graphWidth
                                 val y = height - verticalPadding - (p.amplitudes[i] / maxAmplitude) * graphHeight
 
-                                if ((offset.x - x) * (offset.x - x) + (offset.y - y) * (offset.y - y) < 1600f) {
+                                if ((offset.x - x) * (offset.x - x) + (offset.y - y) * (offset.y - y) < 800f) {
                                     onSelectedIndexChange(i)
                                     found = true
                                     break
                                 }
                                 currentTime += segmentDuration
                             }
+                            //if no point selected, second pass for zone
+                            if (!found) {
+                                currentTime = 0f
+                                for (i in p.timings.indices) {
+                                    val segmentDuration = p.timings[i]
+                                    val x =
+                                        horizontalPadding + (currentTime + segmentDuration / 2f) / totalTime * graphWidth
+                                    val y =
+                                        height - verticalPadding - (p.amplitudes[i] / maxAmplitude) * graphHeight
+
+                                    if ((offset.x - x) < segmentDuration/2f/totalTime*graphWidth) {
+                                        onSelectedIndexChange(i)
+                                        found = true
+                                        break
+                                    }
+                                    currentTime += segmentDuration
+                                }
+                            }
+
+
                             if (!found) onSelectedIndexChange(-1)
                         }
                     }
@@ -568,21 +624,25 @@ fun VibrationEnvelopeEditor(
                     if (selectedIndex != -1 && !isAddingPoint) {
                         detectDragGestures { change, dragAmount ->
                             change.consume()
-                            
+
                             val p = currentPattern
                             val oldTotalTime = totalPatternTime(p)
                             val newTimings = p.timings.copyOf()
                             val newAmplitudes = p.amplitudes.copyOf()
-                            
+
                             val deltaY = dragAmount.y
                             val amplitudeChange = -(deltaY / graphHeight * maxAmplitude).toInt()
-                            newAmplitudes[selectedIndex] = (newAmplitudes[selectedIndex] + amplitudeChange).coerceIn(0, 255)
-                            
+                            newAmplitudes[selectedIndex] =
+                                (newAmplitudes[selectedIndex] + amplitudeChange).coerceIn(0, 255)
+
                             val deltaX = dragAmount.x
                             val durationChange = (deltaX / graphWidth * oldTotalTime).toLong()
-                            newTimings[selectedIndex] = (newTimings[selectedIndex] + durationChange).coerceAtLeast(10L)
-                            
-                            currentOnPatternChange(p.copy(timings = newTimings, amplitudes = newAmplitudes))
+                            newTimings[selectedIndex] =
+                                (newTimings[selectedIndex] + durationChange).coerceAtLeast(10L)
+
+                            currentOnPatternChange(
+                                p.copy(timings = newTimings, amplitudes = newAmplitudes)
+                            )
                         }
                     }
                 }
@@ -664,7 +724,7 @@ fun VibrationEnvelopeEditor(
                 currentTime += duration
             }
             path.lineTo(horizontalPadding + (currentTime / totalTime) * graphWidth, height - verticalPadding)
-            drawPath(path, Color.Blue, style = Stroke(4f))
+            drawPath(path, Color.Blue, style = Stroke(5f))
         }
     }
 }
@@ -673,8 +733,9 @@ fun LongArray.toMutableList(): MutableList<Long> = this.toList().toMutableList()
 fun IntArray.toMutableList(): MutableList<Int> = this.toList().toMutableList()
 
 // do not remove this todo section TODO next nice additions:
-//Import and links from the other tabs
 //- Zoom and adaptive time text
 // - A bar that moves when playing
-// - notifications about unsupported stuff
+// - ***notifications about unsupported stuff
 //   - Other windows of types of vibration edits
+// - **intensity + duration number above selected point
+// - stop vibration (studio & pattern & app)

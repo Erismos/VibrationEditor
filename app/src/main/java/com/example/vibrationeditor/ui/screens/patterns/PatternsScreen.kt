@@ -1,6 +1,9 @@
 package com.example.vibrationeditor.ui.screens.patterns
 
 import android.annotation.SuppressLint
+import android.os.Build
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -372,6 +375,7 @@ fun PatternCard(
 ) {
     var elapsedTime by remember { mutableLongStateOf(0L) }
     var playId by remember { mutableStateOf(0) }
+    var isPlaying by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -418,29 +422,48 @@ fun PatternCard(
             )
 
             IconButton(onClick = {
-                elapsedTime = 0L
-                playId++
-                val currentPlayId = playId
-                val startTime = System.currentTimeMillis()
-
-                pattern.play(context)
-
-                scope.launch {
-                    val totalDuration = pattern.timings.sum()
-
-                    while(elapsedTime < totalDuration) {
-                        if (playId != currentPlayId) return@launch
-                        elapsedTime = System.currentTimeMillis() - startTime
-                        delay(16L)
+                if (isPlaying) {
+                    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        val manager = context.getSystemService(VibratorManager::class.java)
+                        manager?.defaultVibrator
+                    } else {
+                        @Suppress("DEPRECATION")
+                        context.getSystemService(Vibrator::class.java)
                     }
-
+                    vibrator?.cancel()
+                    isPlaying = false
                     elapsedTime = 0L
+                    playId++
+                } else {
+                    elapsedTime = 0L
+                    isPlaying = true
+                    playId++
+                    val currentPlayId = playId
+                    val startTime = System.currentTimeMillis()
+
+                    pattern.play(context)
+
+                    scope.launch {
+                        val totalDuration = pattern.timings.sum()
+
+                        while(elapsedTime < totalDuration) {
+                            if (playId != currentPlayId) {
+                                isPlaying = false
+                                return@launch
+                            }
+                            elapsedTime = System.currentTimeMillis() - startTime
+                            delay(16L)
+                        }
+
+                        elapsedTime = 0L
+                        isPlaying = false
+                    }
                 }
             }) {
                 Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = "Lire",
-                    tint = MaterialTheme.colorScheme.primary
+                    if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Arrêter" else "Lire",
+                    tint = if (isPlaying) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 )
             }
         }
