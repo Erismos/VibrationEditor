@@ -647,25 +647,35 @@ fun VibrationEnvelopeEditor(
                     }
                 }
         ) {
-            // Draw Timeline (top)
-            val timeStep = 200 // ms
-            val labelStyle = TextStyle(fontSize = 10.sp, color = Color.Gray)
             val totalTime = totalPatternTime(pattern)
+            
+            // Adaptive time stepping
+            // We want roughly 5 to 7 divisions.
+            val targetDivisions = 6
+            val rawStep = totalTime / targetDivisions
+            
+            // Round rawStep to a nice number (e.g., 100, 200, 500, 1000, 2000, 5000...)
+            val niceSteps = listOf(100f, 200f, 500f, 1000f, 2000f, 5000f, 10000f, 20000f, 50000f)
+            val timeStep = niceSteps.firstOrNull { it >= rawStep } ?: niceSteps.last()
+            
+            val labelStyle = TextStyle(fontSize = 10.sp, color = Color.Gray)
 
-            for (t in 0..totalTime.toInt() step timeStep) {
+            for (t in 0..totalTime.toInt() step timeStep.toInt()) {
                 val x = horizontalPadding + (t / totalTime) * graphWidth
                 if (x > width - horizontalPadding + 1) continue
 
                 drawLine(
-                    color = Color.LightGray.copy(alpha = 0.5f),
+                    color = Color.LightGray.copy(alpha = 0.3f),
                     start = Offset(x, verticalPadding),
                     end = Offset(x, height - verticalPadding),
                     strokeWidth = 1f
                 )
 
+                // Convert to seconds for labels
+                val secondsText = String.format("%.1fs", t / 1000f)
                 drawText(
                     textMeasurer = textMeasurer,
-                    text = "${t}ms",
+                    text = secondsText,
                     topLeft = Offset(x - 20f, verticalPadding - 35f),
                     style = labelStyle
                 )
@@ -710,6 +720,17 @@ fun VibrationEnvelopeEditor(
                         topLeft = Offset(xStart, verticalPadding),
                         size = androidx.compose.ui.geometry.Size(xEnd - xStart, graphHeight)
                     )
+                    
+                    // Display current values above the selected point
+                    val valueText = "${duration}ms, $amplitude"
+                    val textLayoutResult = textMeasurer.measure(valueText, style = labelStyle.copy(color = Color.Blue, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold))
+                    val centerX = (xStart + xEnd) / 2f
+                    drawText(
+                        textMeasurer = textMeasurer,
+                        text = valueText,
+                        topLeft = Offset(centerX - textLayoutResult.size.width / 2f, y - 40f),
+                        style = labelStyle.copy(color = Color.Blue, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    )
                 }
 
                 path.lineTo(xStart, y)
@@ -733,9 +754,7 @@ fun LongArray.toMutableList(): MutableList<Long> = this.toList().toMutableList()
 fun IntArray.toMutableList(): MutableList<Int> = this.toList().toMutableList()
 
 // do not remove this todo section TODO next nice additions:
-//- Zoom and adaptive time text
 // - A bar that moves when playing
 // - ***notifications about unsupported stuff
 //   - Other windows of types of vibration edits
 // - **intensity + duration number above selected point
-// - stop vibration (studio & pattern & app)
