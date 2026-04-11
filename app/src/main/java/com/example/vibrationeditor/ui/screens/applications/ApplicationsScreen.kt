@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -85,7 +86,7 @@ import kotlinx.coroutines.withContext
 data class AppListItem(val name: String, val packageName: String, val icon: Drawable)
 
 /** Presentation model for a notification channel/category. */
-data class NotificationType(val id: String, val name: String, var patternName: String = "Par défaut")
+data class NotificationType(val id: String, val name: String, var patternName: String = "Default")
 
 /**
  * Applications screen listing launchable apps and providing a details view.
@@ -145,7 +146,7 @@ fun ApplicationsScreen() {
                             }) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Retour"
+                                    contentDescription = "Back"
                                 )
                             }
                             TextField(
@@ -154,7 +155,7 @@ fun ApplicationsScreen() {
                                 modifier = Modifier
                                     .weight(1f)
                                     .focusRequester(focusRequester),
-                                placeholder = { Text("Rechercher...") },
+                                placeholder = { Text("Search...") },
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
@@ -166,7 +167,7 @@ fun ApplicationsScreen() {
                             )
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Effacer")
+                                    Icon(Icons.Default.Close, contentDescription = "Clear")
                                 }
                             }
                         } else {
@@ -178,7 +179,7 @@ fun ApplicationsScreen() {
                                     .weight(1f)
                             )
                             IconButton(onClick = { isSearchActive = true }) {
-                                Icon(Icons.Default.Search, contentDescription = "Rechercher")
+                                Icon(Icons.Default.Search, contentDescription = "Search")
                             }
                         }
                     }
@@ -253,7 +254,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
         app.packageName
     ) {
         if (!isPermissionGranted || listener == null) {
-            value = listOf(NotificationType("default", "Toutes les notifications"))
+            value = listOf(NotificationType("default", "All notifications"))
             return@produceState
         }
 
@@ -264,19 +265,19 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                     listener.getNotificationChannels(app.packageName, Process.myUserHandle())
                 
                 value = if (channels.isNullOrEmpty()) {
-                    listOf(NotificationType("default", "Toutes les notifications"))
+                    listOf(NotificationType("default", "All notifications"))
                 } else {
                     channels.map { NotificationType(it.id, it.name?.toString() ?: it.id) }
                 }
                 isRestricted = false
             } catch (e: SecurityException) {
                 isRestricted = true
-                value = listOf(NotificationType("default", "Toutes les notifications"))
+                value = listOf(NotificationType("default", "All notifications"))
             } catch (e: Exception) {
-                value = listOf(NotificationType("default", "Toutes les notifications"))
+                value = listOf(NotificationType("default", "All notifications"))
             }
         } else {
-            value = listOf(NotificationType("default", "Toutes les notifications"))
+            value = listOf(NotificationType("default", "All notifications"))
         }
     }
 
@@ -293,7 +294,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                     IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Retour"
+                            contentDescription = "Back"
                         )
                     }
                     Image(
@@ -308,6 +309,16 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                             .padding(start = 12.dp)
                             .weight(1f)
                     )
+                    // Button to modify permissions in system settings
+                    IconButton(onClick = {
+                        context.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = "Modify Permissions",
+                            tint = if (isPermissionGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }
@@ -326,7 +337,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                         Icon(Icons.Default.Warning, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Le service d'écoute est en cours de démarrage...",
+                            "The listening service is starting...",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -342,7 +353,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                         Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Android restreint l'accès aux catégories individuelles des autres applications. Les réglages s'appliqueront à toutes les notifications de cette application.",
+                            "Android restricts access to individual categories. Settings will apply to all notifications from this application.",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -350,7 +361,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
             }
 
             Text(
-                "Types de notifications",
+                "Notification types",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -358,7 +369,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
 
             LazyColumn {
                 items(notificationTypes) { type ->
-                    val currentPattern = currentAppMapping[type.id] ?: "Par défaut"
+                    val currentPattern = currentAppMapping[type.id] ?: "Default"
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -379,7 +390,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                         }) {
                             Icon(
                                 Icons.Default.Settings,
-                                contentDescription = "Modifier",
+                                contentDescription = "Modify",
                                 tint = MaterialTheme.colorScheme.outline
                             )
                         }
@@ -400,7 +411,7 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                         .padding(bottom = 32.dp)
                 ) {
                     Text(
-                        text = "Choisir un pattern",
+                        text = "Choose a pattern",
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(16.dp)
                     )
@@ -408,8 +419,8 @@ fun AppDetailView(app: AppListItem, onBack: () -> Unit) {
                     LazyColumn {
                         item {
                             PatternOptionRow(
-                                name = "Par défaut",
-                                isSelected = (currentAppMapping[editingType?.id] ?: "Par défaut") == "Par défaut",
+                                name = "Default",
+                                isSelected = (currentAppMapping[editingType?.id] ?: "Default") == "Default",
                                 onPlay = { triggerVibration(context, 200) },
                                 onClick = {
                                     editingType?.let { type ->
@@ -480,7 +491,7 @@ fun PatternOptionRow(name: String, isSelected: Boolean, onPlay: () -> Unit, onCl
             IconButton(onClick = onPlay) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Tester",
+                    contentDescription = "Test",
                     tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
                 )
             }
@@ -500,9 +511,9 @@ fun PermissionWarning(onSettingsClick: () -> Unit) {
         modifier = Modifier.padding(bottom = 16.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("L'accès aux notifications est requis pour personnaliser les vibrations.")
+            Text("Notification access is required to customize vibrations.")
             Button(onClick = onSettingsClick, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Donner les permissions")
+                Text("Grant access")
             }
         }
     }
