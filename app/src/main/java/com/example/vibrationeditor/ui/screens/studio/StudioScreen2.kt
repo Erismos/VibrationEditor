@@ -45,6 +45,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun StudioScreen2(
     patternToEdit: Pattern? = null,
+    initialOriginalPattern: Pattern? = null,
+    onPatternChange: (Pattern) -> Unit = {},
+    onOriginalPatternChange: (Pattern) -> Unit = {},
     onDirtyStateChanged: (Boolean) -> Unit = {},
     onDismissDialog: () -> Unit = {},
     onSwitchVersion: (Pattern) -> Unit = {}
@@ -60,7 +63,7 @@ fun StudioScreen2(
     }
 
     var pattern by remember { mutableStateOf(patternToEdit ?: defaultPattern) }
-    var originalPattern by remember { mutableStateOf<Pattern?>(patternToEdit ?: defaultPattern) }
+    var originalPattern by remember { mutableStateOf<Pattern?>(initialOriginalPattern ?: patternToEdit ?: defaultPattern) }
 
     // Recording State
     var isRecording by remember { mutableStateOf(false) }
@@ -89,11 +92,26 @@ fun StudioScreen2(
         originalPattern != null && pattern != originalPattern
     }
 
+    // Sync local change back to global state
+    LaunchedEffect(pattern) {
+        onPatternChange(pattern)
+    }
+
+    LaunchedEffect(originalPattern) {
+        originalPattern?.let { onOriginalPatternChange(it) }
+    }
+
     LaunchedEffect(patternToEdit) {
-        if (patternToEdit != null) {
+        if (patternToEdit != null && patternToEdit != pattern) {
             pattern = patternToEdit
-            originalPattern = patternToEdit
             loadedPatternName = patternToEdit.name
+        }
+    }
+
+    // Also update original if initialOriginalPattern changes
+    LaunchedEffect(initialOriginalPattern) {
+        if (initialOriginalPattern != null && initialOriginalPattern != originalPattern) {
+            originalPattern = initialOriginalPattern
         }
     }
 

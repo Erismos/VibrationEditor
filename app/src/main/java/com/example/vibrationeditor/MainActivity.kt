@@ -148,6 +148,7 @@ fun VibrationEditorApp() {
     
     // Pattern currently being edited in the Studio
     var studioPattern by remember { mutableStateOf<Pattern?>(null) }
+    var originalStudioPattern by remember { mutableStateOf<Pattern?>(null) }
     
     // Toggle between Studio version 1 and version 2
     var useStudioVersion2 by remember { mutableStateOf(true) }
@@ -160,6 +161,7 @@ fun VibrationEditorApp() {
             // Reset studioPattern if we are going to Studio directly from the menu
             if (destination != AppDestinations.STUDIO) {
                 studioPattern = null
+                originalStudioPattern = null
             }
             
             navController.navigate(destination.route) {
@@ -192,16 +194,28 @@ fun VibrationEditorApp() {
                 if (useStudioVersion2) {
                     StudioScreen2(
                         patternToEdit = studioPattern,
-                        onDirtyStateChanged = { isStudioDirty = it },
+                        initialOriginalPattern = originalStudioPattern,
+                        onPatternChange = { p: Pattern -> studioPattern = p },
+                        onOriginalPatternChange = { p: Pattern -> originalStudioPattern = p },
+                        onDirtyStateChanged = { dirty: Boolean -> isStudioDirty = dirty },
                         onDismissDialog = { showUnsavedDialog = true },
-                        onSwitchVersion = { studioPattern = it ; useStudioVersion2 = false }
+                        onSwitchVersion = { current: Pattern -> 
+                            studioPattern = current
+                            useStudioVersion2 = false 
+                        }
                     )
                 } else {
                     Studio(
                         patternToEdit = studioPattern,
-                        onDirtyStateChanged = { isStudioDirty = it },
+                        initialOriginalPattern = originalStudioPattern,
+                        onPatternChange = { p: Pattern -> studioPattern = p },
+                        onOriginalPatternChange = { p: Pattern -> originalStudioPattern = p },
+                        onDirtyStateChanged = { dirty: Boolean -> isStudioDirty = dirty },
                         onDismissDialog = { showUnsavedDialog = true },
-                        onSwitchVersion = { studioPattern = it ; useStudioVersion2 = true }
+                        onSwitchVersion = { current: Pattern ->
+                            studioPattern = current
+                            useStudioVersion2 = true 
+                        }
                     )
                 }
             }
@@ -210,6 +224,7 @@ fun VibrationEditorApp() {
                     navigateTo = navigateTo,
                     onEditPattern = { pattern: Pattern ->
                         studioPattern = pattern
+                        originalStudioPattern = pattern
                         navController.navigate(AppDestinations.STUDIO.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
@@ -233,6 +248,7 @@ fun VibrationEditorApp() {
                             isStudioDirty = false // Allow navigation
                             pendingNavigationDestination?.let { dest ->
                                 studioPattern = null // Reset editing state
+                                originalStudioPattern = null
                                 navController.navigate(dest.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
