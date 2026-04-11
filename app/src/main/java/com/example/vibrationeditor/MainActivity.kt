@@ -192,18 +192,16 @@ fun VibrationEditorApp() {
                 if (useStudioVersion2) {
                     StudioScreen2(
                         patternToEdit = studioPattern,
-                        onPatternChange = { studioPattern = it },
                         onDirtyStateChanged = { isStudioDirty = it },
                         onDismissDialog = { showUnsavedDialog = true },
-                        onSwitchVersion = { useStudioVersion2 = false }
+                        onSwitchVersion = { studioPattern = it ; useStudioVersion2 = false }
                     )
                 } else {
                     Studio(
                         patternToEdit = studioPattern,
-                        onPatternChange = { studioPattern = it },
                         onDirtyStateChanged = { isStudioDirty = it },
                         onDismissDialog = { showUnsavedDialog = true },
-                        onSwitchVersion = { useStudioVersion2 = true }
+                        onSwitchVersion = { studioPattern = it ; useStudioVersion2 = true }
                     )
                 }
             }

@@ -42,10 +42,9 @@ import kotlin.math.max
 @Composable
 fun Studio(
     patternToEdit: Pattern? = null,
-    onPatternChange: (Pattern) -> Unit = {},
     onDirtyStateChanged: (Boolean) -> Unit = {},
     onDismissDialog: () -> Unit = {},
-    onSwitchVersion: () -> Unit = {}
+    onSwitchVersion: (Pattern) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -73,11 +72,6 @@ fun Studio(
     var showLoadDialog by remember { mutableStateOf(false) }
     var showOverwriteConfirm by remember { mutableStateOf(false) }
     var saveName by remember { mutableStateOf("") }
-
-    // Sync local change back to global state
-    LaunchedEffect(pattern) {
-        onPatternChange(pattern)
-    }
 
     // Update state if patternToEdit changes (when navigated from PatternsScreen)
     LaunchedEffect(patternToEdit) {
@@ -210,7 +204,7 @@ fun Studio(
             StableTopAppBar(
                 title = "Studio (Classic)",
                 action = {
-                    IconButton(onClick = onSwitchVersion) {
+                    IconButton(onClick = { onSwitchVersion(pattern) }){
                         Icon(Icons.Default.SwapHoriz, "Switch to Touch Mode")
                     }
                 }
@@ -667,7 +661,7 @@ fun VibrationEnvelopeEditor(
             
             // Adaptive time stepping
             // We want roughly 5 to 7 divisions.
-            val targetDivisions = 6
+            val targetDivisions = 8
             val rawStep = totalTime / targetDivisions
             
             // Round rawStep to a nice number (e.g., 100, 200, 500, 1000, 2000, 5000...)
@@ -736,17 +730,6 @@ fun VibrationEnvelopeEditor(
                         topLeft = Offset(xStart, verticalPadding),
                         size = androidx.compose.ui.geometry.Size(xEnd - xStart, graphHeight)
                     )
-                    
-                    // Display current values above the selected point
-                    val valueText = "${duration}ms, $amplitude"
-                    val textLayoutResult = textMeasurer.measure(valueText, style = labelStyle.copy(color = Color.Blue, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold))
-                    val centerX = (xStart + xEnd) / 2f
-                    drawText(
-                        textMeasurer = textMeasurer,
-                        text = valueText,
-                        topLeft = Offset(centerX - textLayoutResult.size.width / 2f, y - 40f),
-                        style = labelStyle.copy(color = Color.Blue, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    )
                 }
 
                 path.lineTo(xStart, y)
@@ -762,6 +745,42 @@ fun VibrationEnvelopeEditor(
             }
             path.lineTo(horizontalPadding + (currentTime / totalTime) * graphWidth, height - verticalPadding)
             drawPath(path, Color.Blue, style = Stroke(5f))
+
+            //Draw the text of selected index
+            if(selectedIndex != -1) {
+                currentTime = 0f
+                for (i in pattern.timings.indices) {
+                    if (i == selectedIndex) {
+                        val duration = pattern.timings[i]
+                        val amplitude = pattern.amplitudes[i]
+                        val xStart = horizontalPadding + (currentTime / totalTime) * graphWidth
+                        val xEnd =
+                            horizontalPadding + ((currentTime + duration) / totalTime) * graphWidth
+                        val y = height - verticalPadding - (amplitude / maxAmplitude) * graphHeight
+
+                        // Display current values above the selected point
+                        val valueText = "${duration}ms, $amplitude"
+                        val textLayoutResult = textMeasurer.measure(
+                            valueText,
+                            style = labelStyle.copy(
+                                color = Color.Blue,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                        )
+                        val centerX = (xStart + xEnd) / 2f
+                        drawText(
+                            textMeasurer = textMeasurer,
+                            text = valueText,
+                            topLeft = Offset(centerX - textLayoutResult.size.width / 2f, y - 40f),
+                            style = labelStyle.copy(
+                                color = Color.Red,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                        )
+                    }
+                    currentTime += pattern.timings[i]
+                }
+            }
         }
     }
 }

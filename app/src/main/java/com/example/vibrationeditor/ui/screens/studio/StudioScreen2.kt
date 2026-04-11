@@ -45,10 +45,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun StudioScreen2(
     patternToEdit: Pattern? = null,
-    onPatternChange: (Pattern) -> Unit = {},
     onDirtyStateChanged: (Boolean) -> Unit = {},
     onDismissDialog: () -> Unit = {},
-    onSwitchVersion: () -> Unit = {}
+    onSwitchVersion: (Pattern) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -88,11 +87,6 @@ fun StudioScreen2(
 
     val hasModifications = remember(pattern, originalPattern) {
         originalPattern != null && pattern != originalPattern
-    }
-
-    // Sync local change back to global state
-    LaunchedEffect(pattern) {
-        onPatternChange(pattern)
     }
 
     LaunchedEffect(patternToEdit) {
@@ -240,7 +234,7 @@ fun StudioScreen2(
             StableTopAppBar(
                 title = "Studio (Touch Mode)",
                 action = {
-                    IconButton(onClick = onSwitchVersion) {
+                    IconButton(onClick = { onSwitchVersion(pattern) }) {
                         Icon(Icons.Default.SwapHoriz, "Switch to Classic Mode")
                     }
                 }
