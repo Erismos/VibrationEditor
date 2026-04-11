@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -503,97 +504,126 @@ fun PatternCard(
     onLongClick: () -> Unit
 ) {
     var elapsedTime by remember { mutableLongStateOf(0L) }
-    var playId by remember { mutableStateOf(0) }
+    var playId by remember { mutableIntStateOf(0) }
     var isPlaying by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    Card(
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
+            .height(IntrinsicSize.Min)
     ) {
-        Row(
+        // Main card
+        Card(
             modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .weight(1f)
+                .fillMaxHeight()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick
+                )
         ) {
-            if (isSelectionMode) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = null
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = pattern.name,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = "${pattern.timings.sum()}ms",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            PatternBarsPreview(
-                pattern = pattern,
-                elapsedTime = elapsedTime,
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp)
-            )
-
-            IconButton(onClick = {
-                if (isPlaying) {
-                    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        val manager = context.getSystemService(VibratorManager::class.java)
-                        manager?.defaultVibrator
-                    } else {
-                        @Suppress("DEPRECATION")
-                        context.getSystemService(Vibrator::class.java)
-                    }
-                    vibrator?.cancel()
-                    isPlaying = false
-                    elapsedTime = 0L
-                    playId++
-                } else {
-                    elapsedTime = 0L
-                    isPlaying = true
-                    playId++
-                    val currentPlayId = playId
-                    val startTime = System.currentTimeMillis()
-
-                    pattern.play(context)
-
-                    scope.launch {
-                        val totalDuration = pattern.timings.sum()
-
-                        while(elapsedTime < totalDuration) {
-                            if (playId != currentPlayId) {
-                                isPlaying = false
-                                return@launch
-                            }
-                            elapsedTime = System.currentTimeMillis() - startTime
-                            delay(16L)
-                        }
-
-                        elapsedTime = 0L
-                        isPlaying = false
-                    }
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                if (isSelectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = null
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
                 }
-            }) {
-                Icon(
-                    if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Stop" else "Play",
-                    tint = if (isPlaying) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = pattern.name,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "${pattern.timings.sum()}ms",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                PatternBarsPreview(
+                    pattern = pattern,
+                    elapsedTime = elapsedTime,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp)
                 )
+            }
+        }
+
+        // Play card
+        Card(
+            modifier = Modifier
+                .fillMaxHeight()
+                .aspectRatio(1f)
+                .clickable(
+                    onClick = onClick,
+                ),
+            shape = CircleShape
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .aspectRatio(1f)
+            ) {
+                IconButton(
+                    modifier = Modifier.fillMaxSize(),
+                    onClick = {
+                    if (isPlaying) {
+                        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            val manager = context.getSystemService(VibratorManager::class.java)
+                            manager?.defaultVibrator
+                        } else {
+                            @Suppress("DEPRECATION")
+                            context.getSystemService(Vibrator::class.java)
+                        }
+                        vibrator?.cancel()
+                        isPlaying = false
+                        elapsedTime = 0L
+                        playId++
+                    } else {
+                        elapsedTime = 0L
+                        isPlaying = true
+                        playId++
+                        val currentPlayId = playId
+                        val startTime = System.currentTimeMillis()
+
+                        pattern.play(context)
+
+                        scope.launch {
+                            val totalDuration = pattern.timings.sum()
+
+                            while (elapsedTime < totalDuration) {
+                                if (playId != currentPlayId) {
+                                    isPlaying = false
+                                    return@launch
+                                }
+                                elapsedTime = System.currentTimeMillis() - startTime
+                                delay(16L)
+                            }
+
+                            elapsedTime = 0L
+                            isPlaying = false
+                        }
+                    }
+                }) {
+                    Icon(
+                        if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Stop" else "Play",
+                        tint = if (isPlaying) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
             }
         }
     }
