@@ -308,8 +308,7 @@ fun PatternsScreen(
                         selectedPattern = null 
                     },
                     onAssigned = { appName, channelName ->
-                        showAppPicker = false
-                        selectedPattern = null
+                        // Removed auto-dismiss to allow multiple assignments
                         scope.launch {
                             snackbarHostState.showSnackbar("Pattern assigned to $appName ($channelName)")
                         }
@@ -390,11 +389,19 @@ fun AppPickerSheet(
 
         Column(modifier = Modifier.fillMaxSize()) {
             if (selectedApp == null) {
-                Text(
-                    "Assign to App",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(16.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Assign to App",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    TextButton(onClick = onDismiss) {
+                        Text("Done")
+                    }
+                }
                 TextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -436,6 +443,9 @@ fun NotificationChannelPicker(
     val isPermissionGranted = isNotificationServiceEnabled(context)
     val listener = VibrationNotificationListener.instance
 
+    // Persistent mappings storage to check current assignments
+    var allMappings by remember { mutableStateOf(AppMapping.loadAll(context)) }
+    
     val notificationTypes by produceState<List<NotificationType>>(initialValue = emptyList(), listener) {
         if (!isPermissionGranted || listener == null) {
             value = listOf(NotificationType("default", "All notifications"))
@@ -460,7 +470,7 @@ fun NotificationChannelPicker(
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
-            Text(app.name, style = MaterialTheme.typography.titleLarge)
+            Text(app.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
         }
 
         if (!isPermissionGranted) {
@@ -472,15 +482,28 @@ fun NotificationChannelPicker(
 
         LazyColumn {
             items(notificationTypes) { type ->
+                val isCurrentlyAssigned = allMappings[app.packageName]?.channelMappings?.get(type.id) == pattern.name
+                
                 ListItem(
                     headlineContent = { Text(type.name) },
+                    trailingContent = {
+                        if (isCurrentlyAssigned) {
+                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    },
                     modifier = Modifier.clickable {
-                        // Save the mapping
-                        val allMappings = AppMapping.loadAll(context).toMutableMap()
-                        val currentMapping = allMappings[app.packageName]?.channelMappings?.toMutableMap() ?: mutableMapOf()
-                        currentMapping[type.id] = pattern.name
-                        allMappings[app.packageName] = AppMapping(app.packageName, currentMapping)
-                        AppMapping.saveAll(context, allMappings)
+                        val currentMappingsMutable = allMappings.toMutableMap()
+                        val currentAppMappings = currentMappingsMutable[app.packageName]?.channelMappings?.toMutableMap() ?: mutableMapOf()
+                        
+                        if (isCurrentlyAssigned) {
+                            currentAppMappings.remove(type.id)
+                        } else {
+                            currentAppMappings[type.id] = pattern.name
+                        }
+                        
+                        currentMappingsMutable[app.packageName] = AppMapping(app.packageName, currentAppMappings)
+                        AppMapping.saveAll(context, currentMappingsMutable)
+                        allMappings = currentMappingsMutable
                         
                         onAssigned(app.name, type.name)
                     }
