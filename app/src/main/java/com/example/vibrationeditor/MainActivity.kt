@@ -15,6 +15,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.outlined.AccountBox
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,7 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
@@ -50,10 +57,7 @@ import com.example.vibrationeditor.ui.theme.VibrationEditorTheme
 
 /**
  * Notification listener service used to detect when the app is connected as a
- * notification listener.
- *
- * The [instance] reference is exposed as Compose state so UI can react when the
- * service connects or disconnects.
+ * notification listener and intercept incoming notifications to play custom patterns.
  */
 class VibrationNotificationListener : NotificationListenerService() {
     companion object {
@@ -64,13 +68,13 @@ class VibrationNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        Log.d("VibrationEditor", "Service connecté")
+        Log.d("VibrationEditor", "Service connected")
         instance = this
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
-        Log.d("VibrationEditor", "Service déconnecté")
+        Log.d("VibrationEditor", "Service disconnected")
         instance = null
     }
 
@@ -78,30 +82,30 @@ class VibrationNotificationListener : NotificationListenerService() {
         val sbnNotNull = sbn ?: return
         val packageName = sbnNotNull.packageName
         
-        // On ignore les notifications de notre propre application pour éviter les boucles
+        // Ignore notifications from our own app to prevent loops
         if (packageName == this.packageName) return
 
-        // Récupération du canal (API 26+)
+        // Get channel ID (API 26+)
         val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             sbnNotNull.notification.channelId ?: "default"
         } else {
             "default"
         }
 
-        Log.d("VibrationEditor", "Notification reçue: $packageName (canal: $channelId)")
+        Log.d("VibrationEditor", "Notification received from: $packageName (channel: $channelId)")
 
-        // 1. Charger les mappings sauvegardés
+        // 1. Load saved mappings
         val allMappings = AppMapping.loadAll(this)
         val appMapping = allMappings[packageName] ?: return
 
-        // 2. Trouver le pattern associé (canal spécifique ou global pour l'app)
+        // 2. Find associated pattern (channel specific or global for the app)
         val patternName = appMapping.channelMappings[channelId] ?: appMapping.channelMappings["default"] ?: return
 
         // 3. Charger le pattern et le jouer
         val allPatterns = Pattern.loadAll(this)
         val pattern = allPatterns.find { it.name == patternName } ?: return
 
-        Log.d("VibrationEditor", "Déclenchement du pattern: $patternName")
+        Log.d("VibrationEditor", "Triggering custom pattern: $patternName")
         pattern.play(this)
     }
 
@@ -124,7 +128,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Root composable containing the adaptive navigation scaffold.
+ * Root composable containing the adaptive navigation scaffold and global navigation logic.
  */
 @PreviewScreenSizes
 @Composable
@@ -147,7 +151,6 @@ fun VibrationEditorApp() {
             showUnsavedDialog = true
         } else {
             // Reset patternToEdit if we are going to Studio directly from the menu
-            // but NOT if we are being redirected by an edit action (handled in navigateToEdit)
             if (destination != AppDestinations.STUDIO) {
                 patternToEdit = null
             }
@@ -163,14 +166,15 @@ fun VibrationEditorApp() {
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestinations.entries.forEach { destination ->
+                val isSelected = currentDestination?.hierarchy?.any { it.route == destination.route } == true
                 item(
                     icon = { Icon(
-                        painterResource(destination.icon),
+                        imageVector = if (isSelected) destination.selectedIcon else destination.unselectedIcon,
                         contentDescription = destination.label,
                         modifier = Modifier.size(36.dp)
                     ) },
                     label = { Text(destination.label) },
-                    selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true,
+                    selected = isSelected,
                     onClick = { navigateTo(destination) }
                 )
             }
@@ -187,7 +191,7 @@ fun VibrationEditorApp() {
             composable(AppDestinations.PATTERNS.route) {
                 PatternsScreen(
                     navigateTo = navigateTo,
-                    onEditPattern = { pattern ->
+                    onEditPattern = { pattern: Pattern ->
                         patternToEdit = pattern
                         navController.navigate(AppDestinations.STUDIO.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -203,13 +207,13 @@ fun VibrationEditorApp() {
         if (showUnsavedDialog) {
             AlertDialog(
                 onDismissRequest = { showUnsavedDialog = false },
-                title = { Text("Changements non sauvegardés") },
-                text = { Text("Vous avez des modifications non sauvegardées dans le Studio. Voulez-vous les ignorer et quitter ?") },
+                title = { Text("Unsaved Changes") },
+                text = { Text("You have unsaved modifications in the Studio. Do you want to discard them and leave?") },
                 confirmButton = {
                     Button(
                         onClick = {
                             showUnsavedDialog = false
-                            isStudioDirty = false // Autorise la navigation
+                            isStudioDirty = false // Allow navigation
                             pendingNavigationDestination?.let { dest ->
                                 patternToEdit = null // Reset editing state
                                 navController.navigate(dest.route) {
@@ -222,10 +226,10 @@ fun VibrationEditorApp() {
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) { Text("Ignorer et quitter") }
+                    ) { Text("Discard & Leave") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showUnsavedDialog = false }) { Text("Rester") }
+                    TextButton(onClick = { showUnsavedDialog = false }) { Text("Stay") }
                 }
             )
         }
@@ -234,15 +238,25 @@ fun VibrationEditorApp() {
 
 /**
  * Top-level destinations displayed in the navigation suite.
+ *
+ * @property label Display label.
+ * @property selectedIcon Icon to show when selected.
+ * @property unselectedIcon Icon to show when not selected.
+ * @property route Navigation route.
  */
-enum class AppDestinations(val label: String, val icon: Int, val route: String) {
-    STUDIO("Studio", R.drawable.ic_home, "studio"),
-    PATTERNS("Patterns", R.drawable.ic_favorite, "patterns"),
-    APPLICATIONS("Applications", R.drawable.ic_account_box, "applications"),
+enum class AppDestinations(
+    val label: String, 
+    val selectedIcon: ImageVector, 
+    val unselectedIcon: ImageVector, 
+    val route: String
+) {
+    STUDIO("Studio", Icons.Filled.Home, Icons.Outlined.Home, "studio"),
+    PATTERNS("Patterns", Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder, "patterns"),
+    APPLICATIONS("Applications", Icons.Filled.AccountBox, Icons.Outlined.AccountBox, "applications"),
 }
 
 /**
- * App top bar used by each primary screen.
+ * App top bar used by each primary screen to maintain consistent style and status bar spacing.
  *
  * @param title Screen title.
  */
@@ -254,13 +268,18 @@ fun StableTopAppBar(title: String) {
 }
 
 /**
- * Triggers a simple one-shot vibration.
+ * Triggers a simple one-shot vibration for testing purposes.
+ *
+ * @param context Current context.
+ * @param duration Duration in ms.
  */
 fun triggerVibration(context: Context, duration: Long = 500) {
     Pattern("Test", longArrayOf(duration), intArrayOf(255)).play(context)
 }
 
-/** Compose preview entry point. */
+/** 
+ * Compose preview entry point. 
+ */
 @Preview(showBackground = true)
 @Composable
 fun GreetingPreview() {
