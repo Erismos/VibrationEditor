@@ -31,11 +31,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.vibrationeditor.AppDestinations
 import com.example.vibrationeditor.VibrationNotificationListener
-import com.example.vibrationeditor.ui.screens.applications.AppListItem
-import com.example.vibrationeditor.ui.screens.applications.AppRow
 import com.example.vibrationeditor.ui.screens.applications.NotificationType
-import com.example.vibrationeditor.ui.screens.applications.getInstalledApps
-import com.example.vibrationeditor.ui.screens.applications.isNotificationServiceEnabled
+import com.example.vibrationeditor.ui.screens.shared.AppListItem
+import com.example.vibrationeditor.ui.screens.shared.AppRow
+import com.example.vibrationeditor.ui.screens.shared.getInstalledApps
+import com.example.vibrationeditor.ui.screens.shared.isNotificationServiceEnabled
 import com.example.vibrationeditor.ui.screens.shared.AppMapping
 import com.example.vibrationeditor.ui.screens.shared.Pattern
 import kotlinx.coroutines.delay
@@ -86,7 +86,7 @@ fun PatternsScreen(
         }
     }
 
-    // Refresh patterns from storage. Default patterns are handled inside Pattern.loadAll.
+    // Refresh patterns from storage.
     LaunchedEffect(Unit) {
         allPatterns = Pattern.loadAll(context)
         isLoading = false
@@ -308,7 +308,8 @@ fun PatternsScreen(
                         selectedPattern = null 
                     },
                     onAssigned = { appName, channelName ->
-                        // Removed auto-dismiss to allow multiple assignments
+                        showAppPicker = false
+                        selectedPattern = null
                         scope.launch {
                             snackbarHostState.showSnackbar("Pattern assigned to $appName ($channelName)")
                         }
@@ -389,19 +390,11 @@ fun AppPickerSheet(
 
         Column(modifier = Modifier.fillMaxSize()) {
             if (selectedApp == null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Assign to App",
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    TextButton(onClick = onDismiss) {
-                        Text("Done")
-                    }
-                }
+                Text(
+                    "Assign to App",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(16.dp)
+                )
                 TextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -416,7 +409,7 @@ fun AppPickerSheet(
                     LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
                         items(filteredApps) { app ->
                             AppRow(app, onClick = { selectedApp = app })
-                            HorizontalDivider(Modifier.padding(horizontal = 16.dp), 0.5.dp)
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
                         }
                     }
                 }
@@ -443,9 +436,6 @@ fun NotificationChannelPicker(
     val isPermissionGranted = isNotificationServiceEnabled(context)
     val listener = VibrationNotificationListener.instance
 
-    // Persistent mappings storage to check current assignments
-    var allMappings by remember { mutableStateOf(AppMapping.loadAll(context)) }
-    
     val notificationTypes by produceState<List<NotificationType>>(initialValue = emptyList(), listener) {
         if (!isPermissionGranted || listener == null) {
             value = listOf(NotificationType("default", "All notifications"))
@@ -470,7 +460,7 @@ fun NotificationChannelPicker(
     Column(modifier = Modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
-            Text(app.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Text(app.name, style = MaterialTheme.typography.titleLarge)
         }
 
         if (!isPermissionGranted) {
@@ -482,33 +472,20 @@ fun NotificationChannelPicker(
 
         LazyColumn {
             items(notificationTypes) { type ->
-                val isCurrentlyAssigned = allMappings[app.packageName]?.channelMappings?.get(type.id) == pattern.name
-                
                 ListItem(
                     headlineContent = { Text(type.name) },
-                    trailingContent = {
-                        if (isCurrentlyAssigned) {
-                            Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
-                        }
-                    },
                     modifier = Modifier.clickable {
-                        val currentMappingsMutable = allMappings.toMutableMap()
-                        val currentAppMappings = currentMappingsMutable[app.packageName]?.channelMappings?.toMutableMap() ?: mutableMapOf()
-                        
-                        if (isCurrentlyAssigned) {
-                            currentAppMappings.remove(type.id)
-                        } else {
-                            currentAppMappings[type.id] = pattern.name
-                        }
-                        
-                        currentMappingsMutable[app.packageName] = AppMapping(app.packageName, currentAppMappings)
-                        AppMapping.saveAll(context, currentMappingsMutable)
-                        allMappings = currentMappingsMutable
+                        // Save the mapping
+                        val allMappings = AppMapping.loadAll(context).toMutableMap()
+                        val currentMapping = allMappings[app.packageName]?.channelMappings?.toMutableMap() ?: mutableMapOf()
+                        currentMapping[type.id] = pattern.name
+                        allMappings[app.packageName] = AppMapping(app.packageName, currentMapping)
+                        AppMapping.saveAll(context, allMappings)
                         
                         onAssigned(app.name, type.name)
                     }
                 )
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), 0.5.dp)
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
             }
         }
     }

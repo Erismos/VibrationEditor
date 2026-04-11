@@ -9,7 +9,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.AccountBox
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
@@ -26,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -37,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
@@ -53,6 +56,7 @@ import com.example.vibrationeditor.ui.screens.patterns.PatternsScreen
 import com.example.vibrationeditor.ui.screens.shared.AppMapping
 import com.example.vibrationeditor.ui.screens.shared.Pattern
 import com.example.vibrationeditor.ui.screens.studio.Studio
+import com.example.vibrationeditor.ui.screens.studio.StudioScreen2
 import com.example.vibrationeditor.ui.theme.VibrationEditorTheme
 
 /**
@@ -143,16 +147,19 @@ fun VibrationEditorApp() {
     var showUnsavedDialog by remember { mutableStateOf(false) }
     
     // Pattern currently being edited in the Studio
-    var patternToEdit by remember { mutableStateOf<Pattern?>(null) }
+    var studioPattern by remember { mutableStateOf<Pattern?>(null) }
+    
+    // Toggle between Studio version 1 and version 2
+    var useStudioVersion2 by remember { mutableStateOf(true) }
 
     val navigateTo = { destination: AppDestinations ->
         if (isStudioDirty && currentDestination?.route == AppDestinations.STUDIO.route) {
             pendingNavigationDestination = destination
             showUnsavedDialog = true
         } else {
-            // Reset patternToEdit if we are going to Studio directly from the menu
+            // Reset studioPattern if we are going to Studio directly from the menu
             if (destination != AppDestinations.STUDIO) {
-                patternToEdit = null
+                studioPattern = null
             }
             
             navController.navigate(destination.route) {
@@ -182,17 +189,29 @@ fun VibrationEditorApp() {
     ) {
         NavHost(navController = navController, startDestination = AppDestinations.PATTERNS.route, modifier = Modifier.fillMaxSize()) {
             composable(AppDestinations.STUDIO.route) { 
-                Studio(
-                    patternToEdit = patternToEdit,
-                    onDirtyStateChanged = { isStudioDirty = it },
-                    onDismissDialog = { showUnsavedDialog = true }
-                ) 
+                if (useStudioVersion2) {
+                    StudioScreen2(
+                        patternToEdit = studioPattern,
+                        onPatternChange = { studioPattern = it },
+                        onDirtyStateChanged = { isStudioDirty = it },
+                        onDismissDialog = { showUnsavedDialog = true },
+                        onSwitchVersion = { useStudioVersion2 = false }
+                    )
+                } else {
+                    Studio(
+                        patternToEdit = studioPattern,
+                        onPatternChange = { studioPattern = it },
+                        onDirtyStateChanged = { isStudioDirty = it },
+                        onDismissDialog = { showUnsavedDialog = true },
+                        onSwitchVersion = { useStudioVersion2 = true }
+                    )
+                }
             }
             composable(AppDestinations.PATTERNS.route) {
                 PatternsScreen(
                     navigateTo = navigateTo,
                     onEditPattern = { pattern: Pattern ->
-                        patternToEdit = pattern
+                        studioPattern = pattern
                         navController.navigate(AppDestinations.STUDIO.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
@@ -215,7 +234,7 @@ fun VibrationEditorApp() {
                             showUnsavedDialog = false
                             isStudioDirty = false // Allow navigation
                             pendingNavigationDestination?.let { dest ->
-                                patternToEdit = null // Reset editing state
+                                studioPattern = null // Reset editing state
                                 navController.navigate(dest.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -259,11 +278,18 @@ enum class AppDestinations(
  * App top bar used by each primary screen to maintain consistent style and status bar spacing.
  *
  * @param title Screen title.
+ * @param action Optional action composable (usually an IconButton).
  */
 @Composable
-fun StableTopAppBar(title: String) {
+fun StableTopAppBar(title: String, action: (@Composable () -> Unit)? = null) {
     Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
-        Text(title, modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp), style = MaterialTheme.typography.titleLarge)
+        Row(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            action?.invoke()
+        }
     }
 }
 

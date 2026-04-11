@@ -42,8 +42,10 @@ import kotlin.math.max
 @Composable
 fun Studio(
     patternToEdit: Pattern? = null,
+    onPatternChange: (Pattern) -> Unit = {},
     onDirtyStateChanged: (Boolean) -> Unit = {},
-    onDismissDialog: () -> Unit = {}
+    onDismissDialog: () -> Unit = {},
+    onSwitchVersion: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -58,7 +60,7 @@ fun Studio(
         )
     }
 
-    var pattern by remember { mutableStateOf(patternToEdit ?: defaultPattern) }
+    var pattern by remember(patternToEdit) { mutableStateOf(patternToEdit ?: defaultPattern) }
     var originalPattern by remember { mutableStateOf<Pattern?>(patternToEdit ?: defaultPattern) }
 
     var isAddingPoint by remember { mutableStateOf(false) }
@@ -71,6 +73,11 @@ fun Studio(
     var showLoadDialog by remember { mutableStateOf(false) }
     var showOverwriteConfirm by remember { mutableStateOf(false) }
     var saveName by remember { mutableStateOf("") }
+
+    // Sync local change back to global state
+    LaunchedEffect(pattern) {
+        onPatternChange(pattern)
+    }
 
     // Update state if patternToEdit changes (when navigated from PatternsScreen)
     LaunchedEffect(patternToEdit) {
@@ -199,7 +206,16 @@ fun Studio(
     }
 
     Scaffold(
-        topBar = { StableTopAppBar("Studio") },
+        topBar = { 
+            StableTopAppBar(
+                title = "Studio (Classic)",
+                action = {
+                    IconButton(onClick = onSwitchVersion) {
+                        Icon(Icons.Default.SwapHoriz, "Switch to Touch Mode")
+                    }
+                }
+            ) 
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(

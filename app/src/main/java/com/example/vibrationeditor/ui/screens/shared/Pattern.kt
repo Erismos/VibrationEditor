@@ -52,7 +52,24 @@ data class Pattern(
             val effect = if (vibrator.hasAmplitudeControl()) {
                 VibrationEffect.createWaveform(timings, safeAmplitudes, -1)
             } else {
-                VibrationEffect.createWaveform(timings, -1)
+                // Normalisation pour les appareils sans contrôle d'amplitude (binaire On/Off)
+                // createWaveform(long[] timings, int repeat) alterne systématiquement OFF, ON, OFF...
+                val normalizedTimings = mutableListOf<Long>()
+                var currentIsOn = false // L'index 0 est toujours OFF
+                var accumulatedDuration = 0L
+
+                for (i in timings.indices) {
+                    val isOn = safeAmplitudes[i] > 0
+                    if (isOn == currentIsOn) {
+                        accumulatedDuration += timings[i]
+                    } else {
+                        normalizedTimings.add(accumulatedDuration)
+                        accumulatedDuration = timings[i]
+                        currentIsOn = isOn
+                    }
+                }
+                normalizedTimings.add(accumulatedDuration)
+                VibrationEffect.createWaveform(normalizedTimings.toLongArray(), -1)
             }
             vibrator.vibrate(effect, audioAttributes)
         } else {
