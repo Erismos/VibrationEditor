@@ -436,6 +436,7 @@ fun StudioScreen2(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { showLoadDialog = true }, modifier = Modifier.weight(1f)) {
                                 Icon(Icons.Default.Folder, null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(8.dp))
                                 Text("Load", fontSize = 14.sp)
                             }
                             Button(
