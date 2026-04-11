@@ -42,6 +42,9 @@ import kotlin.math.max
 @Composable
 fun Studio(
     patternToEdit: Pattern? = null,
+    initialOriginalPattern: Pattern? = null,
+    onPatternChange: (Pattern) -> Unit = {},
+    onOriginalPatternChange: (Pattern) -> Unit = {},
     onDirtyStateChanged: (Boolean) -> Unit = {},
     onDismissDialog: () -> Unit = {},
     onSwitchVersion: (Pattern) -> Unit = {}
@@ -59,8 +62,8 @@ fun Studio(
         )
     }
 
-    var pattern by remember(patternToEdit) { mutableStateOf(patternToEdit ?: defaultPattern) }
-    var originalPattern by remember { mutableStateOf<Pattern?>(patternToEdit ?: defaultPattern) }
+    var pattern by remember { mutableStateOf(patternToEdit ?: defaultPattern) }
+    var originalPattern by remember { mutableStateOf<Pattern?>(initialOriginalPattern ?: patternToEdit ?: defaultPattern) }
 
     var isAddingPoint by remember { mutableStateOf(false) }
     var selectedIndex by remember { mutableIntStateOf(-1) }
@@ -73,13 +76,23 @@ fun Studio(
     var showOverwriteConfirm by remember { mutableStateOf(false) }
     var saveName by remember { mutableStateOf("") }
 
-    // Update state if patternToEdit changes (when navigated from PatternsScreen)
+    // Sync only original pattern changes (happens on load/save)
+    LaunchedEffect(originalPattern) {
+        originalPattern?.let { onOriginalPatternChange(it) }
+    }
+
+    // Update state ONLY if patternToEdit changes from the outside (e.g. Navigated from Patterns list)
     LaunchedEffect(patternToEdit) {
-        if (patternToEdit != null) {
+        if (patternToEdit != null && patternToEdit != pattern) {
             pattern = patternToEdit
-            originalPattern = patternToEdit
             loadedPatternName = patternToEdit.name
-            selectedIndex = -1
+        }
+    }
+
+    // Also update original if initialOriginalPattern changes from outside
+    LaunchedEffect(initialOriginalPattern) {
+        if (initialOriginalPattern != null && initialOriginalPattern != originalPattern) {
+            originalPattern = initialOriginalPattern
         }
     }
 
@@ -144,6 +157,7 @@ fun Studio(
                             originalPattern = null // Treat as unsaved
                             loadedPatternName = null
                             selectedIndex = -1
+                            onPatternChange(newPattern)
                             scope.launch {
                                 snackbarHostState.showSnackbar("Pattern imported successfully")
                             }
@@ -162,7 +176,7 @@ fun Studio(
         }
     )
 
-    // Sync with parent
+    // Sync dirty state with parent (Efficient: only runs when hasModifications flips)
     LaunchedEffect(hasModifications) {
         onDirtyStateChanged(hasModifications)
     }
@@ -188,6 +202,7 @@ fun Studio(
             pattern = newPattern
             originalPattern = newPattern.copy()
             loadedPatternName = name
+            onPatternChange(newPattern)
             
             scope.launch {
                 snackbarHostState.showSnackbar("Pattern '$name' saved")
@@ -494,6 +509,7 @@ fun Studio(
                                         originalPattern = p.copy()
                                         loadedPatternName = p.name
                                         selectedIndex = -1
+                                        onPatternChange(p)
                                         showLoadDialog = false
                                         scope.launch {
                                             snackbarHostState.showSnackbar("Pattern '${p.name}' loaded")
