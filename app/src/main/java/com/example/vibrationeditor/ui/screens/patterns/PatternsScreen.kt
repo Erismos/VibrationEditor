@@ -1,69 +1,28 @@
 package com.example.vibrationeditor.ui.screens.patterns
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Build
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -71,6 +30,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.vibrationeditor.AppDestinations
+import com.example.vibrationeditor.VibrationNotificationListener
+import com.example.vibrationeditor.ui.screens.applications.AppListItem
+import com.example.vibrationeditor.ui.screens.applications.AppRow
+import com.example.vibrationeditor.ui.screens.applications.NotificationType
+import com.example.vibrationeditor.ui.screens.applications.getInstalledApps
+import com.example.vibrationeditor.ui.screens.applications.isNotificationServiceEnabled
+import com.example.vibrationeditor.ui.screens.shared.AppMapping
 import com.example.vibrationeditor.ui.screens.shared.Pattern
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -88,6 +54,9 @@ fun PatternsScreen(
     onEditPattern: (Pattern) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     var allPatterns by remember { mutableStateOf<List<Pattern>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
@@ -100,6 +69,9 @@ fun PatternsScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var showDeleteMultipleDialog by remember { mutableStateOf(false) }
+
+    // State for the "Assign" workflow
+    var showAppPicker by remember { mutableStateOf(false) }
 
     val isSelectionMode = selectedPatterns.isNotEmpty()
 
@@ -127,6 +99,7 @@ fun PatternsScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp) {
                 if (isSelectionMode) {
@@ -138,16 +111,15 @@ fun PatternsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = { selectedPatterns = emptyList() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Annuler")
+                            Icon(Icons.Default.Close, contentDescription = "Cancel")
                         }
                         Text(
-                            text = "${selectedPatterns.size} sélectionné(s)",
+                            text = "${selectedPatterns.size} selected",
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.titleLarge
                         )
-                        // Delete all selected patterns
                         IconButton(onClick = { showDeleteMultipleDialog = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Supprimer")
+                            Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     }
                 } else {
@@ -165,7 +137,7 @@ fun PatternsScreen(
                             }) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Retour"
+                                    contentDescription = "Back"
                                 )
                             }
                             TextField(
@@ -174,7 +146,7 @@ fun PatternsScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .focusRequester(focusRequester),
-                                placeholder = { Text("Rechercher...") },
+                                placeholder = { Text("Search...") },
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
@@ -186,7 +158,7 @@ fun PatternsScreen(
                             )
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Effacer")
+                                    Icon(Icons.Default.Close, contentDescription = "Clear")
                                 }
                             }
                         } else {
@@ -198,17 +170,18 @@ fun PatternsScreen(
                                     .weight(1f)
                             )
                             IconButton(onClick = { isSearchActive = true }) {
-                                Icon(Icons.Default.Search, contentDescription = "Rechercher")
+                                Icon(Icons.Default.Search, contentDescription = "Search")
                             }
                         }
                     }
                 }
             }
         },
-        // Add button
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreateDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Ajouter")
+            if (!isSelectionMode) {
+                FloatingActionButton(onClick = { showCreateDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add")
+                }
             }
         }
     ) { innerPadding ->
@@ -232,14 +205,14 @@ fun PatternsScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "Aucun pattern disponible",
+                                text = "No patterns available",
                                 style = MaterialTheme.typography.headlineSmall,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 textAlign = TextAlign.Center
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                text = "Créez ou importez des patterns en appuyant sur '+' en bas à droite de l'écran",
+                                text = "Create or import patterns by tapping '+' in the bottom right",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -253,14 +226,12 @@ fun PatternsScreen(
                             isSelected = pattern in selectedPatterns,
                             isSelectionMode = isSelectionMode,
                             onClick = {
-                                // add it to selected patterns if on selection mode
                                 if (isSelectionMode) {
                                     selectedPatterns = if (pattern in selectedPatterns) {
                                         selectedPatterns - pattern
                                     } else {
                                         selectedPatterns + pattern
                                     }
-                                // else open pattern actions
                                 } else {
                                     selectedPattern = pattern
                                     showPatternActions = true
@@ -294,14 +265,14 @@ fun PatternsScreen(
                         )
                         
                         ListItem(
-                            headlineContent = { Text("Jouer") },
+                            headlineContent = { Text("Play") },
                             leadingContent = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
                             modifier = Modifier.clickable {
                                 selectedPattern!!.play(context)
                             }
                         )
                         ListItem(
-                            headlineContent = { Text("Modifier") },
+                            headlineContent = { Text("Edit") },
                             leadingContent = { Icon(Icons.Default.Edit, contentDescription = null) },
                             modifier = Modifier.clickable {
                                 onEditPattern(selectedPattern!!)
@@ -310,8 +281,16 @@ fun PatternsScreen(
                             }
                         )
                         ListItem(
-                            headlineContent = { Text("Supprimer") },
-                            leadingContent = { Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red) },
+                            headlineContent = { Text("Assign") },
+                            leadingContent = { Icon(Icons.AutoMirrored.Filled.Login, contentDescription = null) },
+                            modifier = Modifier.clickable {
+                                showAppPicker = true
+                                showPatternActions = false
+                            }
+                        )
+                        ListItem(
+                            headlineContent = { Text("Delete") },
+                            leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red) },
                             modifier = Modifier.clickable { 
                                 showPatternActions = false
                                 showDeleteDialog = true 
@@ -319,6 +298,23 @@ fun PatternsScreen(
                         )
                     }
                 }
+            }
+
+            if (showAppPicker && selectedPattern != null) {
+                AppPickerSheet(
+                    pattern = selectedPattern!!,
+                    onDismiss = { 
+                        showAppPicker = false
+                        selectedPattern = null 
+                    },
+                    onAssigned = { appName, channelName ->
+                        showAppPicker = false
+                        selectedPattern = null
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Pattern assigned to $appName ($channelName)")
+                        }
+                    }
+                )
             }
 
             // Dialogs
@@ -357,6 +353,139 @@ fun PatternsScreen(
                         showDeleteMultipleDialog = false
                     }
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppPickerSheet(
+    pattern: Pattern,
+    onDismiss: () -> Unit,
+    onAssigned: (String, String) -> Unit
+) {
+    val context = LocalContext.current
+    var allApps by remember { mutableStateOf<List<AppListItem>>(emptyList()) }
+    var searchQuery by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(true) }
+    var selectedApp by remember { mutableStateOf<AppListItem?>(null) }
+
+    val filteredApps = remember(allApps, searchQuery) {
+        if (searchQuery.isEmpty()) allApps else allApps.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+
+    LaunchedEffect(Unit) {
+        allApps = getInstalledApps(context)
+        isLoading = false
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxHeight(0.9f)
+    ) {
+        BackHandler {
+            if (selectedApp != null) selectedApp = null else onDismiss()
+        }
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (selectedApp == null) {
+                Text(
+                    "Assign to App",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(16.dp)
+                )
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    placeholder = { Text("Search apps...") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    singleLine = true
+                )
+                if (isLoading) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
+                        items(filteredApps) { app ->
+                            AppRow(app, onClick = { selectedApp = app })
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp), 0.5.dp)
+                        }
+                    }
+                }
+            } else {
+                NotificationChannelPicker(
+                    app = selectedApp!!,
+                    pattern = pattern,
+                    onBack = { selectedApp = null },
+                    onAssigned = onAssigned
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationChannelPicker(
+    app: AppListItem,
+    pattern: Pattern,
+    onBack: () -> Unit,
+    onAssigned: (String, String) -> Unit
+) {
+    val context = LocalContext.current
+    val isPermissionGranted = isNotificationServiceEnabled(context)
+    val listener = VibrationNotificationListener.instance
+
+    val notificationTypes by produceState<List<NotificationType>>(initialValue = emptyList(), listener) {
+        if (!isPermissionGranted || listener == null) {
+            value = listOf(NotificationType("default", "All notifications"))
+            return@produceState
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val channels = listener.getNotificationChannels(app.packageName, android.os.Process.myUserHandle())
+                value = if (channels.isNullOrEmpty()) {
+                    listOf(NotificationType("default", "All notifications"))
+                } else {
+                    channels.map { NotificationType(it.id, it.name?.toString() ?: it.id) }
+                }
+            } catch (e: Exception) {
+                value = listOf(NotificationType("default", "All notifications"))
+            }
+        } else {
+            value = listOf(NotificationType("default", "All notifications"))
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+            Text(app.name, style = MaterialTheme.typography.titleLarge)
+        }
+
+        if (!isPermissionGranted) {
+            Button(
+                onClick = { context.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) },
+                modifier = Modifier.padding(16.dp)
+            ) { Text("Grant Notification Access") }
+        }
+
+        LazyColumn {
+            items(notificationTypes) { type ->
+                ListItem(
+                    headlineContent = { Text(type.name) },
+                    modifier = Modifier.clickable {
+                        // Save the mapping
+                        val allMappings = AppMapping.loadAll(context).toMutableMap()
+                        val currentMapping = allMappings[app.packageName]?.channelMappings?.toMutableMap() ?: mutableMapOf()
+                        currentMapping[type.id] = pattern.name
+                        allMappings[app.packageName] = AppMapping(app.packageName, currentMapping)
+                        AppMapping.saveAll(context, allMappings)
+                        
+                        onAssigned(app.name, type.name)
+                    }
+                )
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp), 0.5.dp)
             }
         }
     }
@@ -462,7 +591,7 @@ fun PatternCard(
             }) {
                 Icon(
                     if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Arrêter" else "Lire",
+                    contentDescription = if (isPlaying) "Stop" else "Play",
                     tint = if (isPlaying) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 )
             }
@@ -480,18 +609,18 @@ fun CreatePatternDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ajouter un pattern") },
+        title = { Text("Add pattern") },
         text = {
-            Text("Voulez-vous créer un nouveau pattern dans le studio ?")
+            Text("Do you want to create a new pattern in the Studio?")
         },
         confirmButton = {
             Button(onClick = onCreate) {
-                Text("Créer")
+                Text("Create")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Annuler")
+                Text("Cancel")
             }
         }
     )
@@ -508,8 +637,8 @@ fun DeletePatternDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Supprimer le pattern") },
-        text = { Text("Êtes-vous sûr de vouloir supprimer \"${pattern.name}\" ?") },
+        title = { Text("Delete pattern") },
+        text = { Text("Are you sure you want to delete \"${pattern.name}\"?") },
         confirmButton = {
             Button(
                 onClick = onConfirm,
@@ -517,12 +646,12 @@ fun DeletePatternDialog(
                     containerColor = MaterialTheme.colorScheme.error
                 )
             ) {
-                Text("Supprimer")
+                Text("Delete")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Annuler")
+                Text("Cancel")
             }
         }
     )
@@ -539,8 +668,8 @@ fun DeleteMultiplePatternDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Supprimer la sléection de patterns") },
-        text = { Text("Êtes-vous sûr de vouloir supprimer ${patterns.size} patterns ?") },
+        title = { Text("Delete selected patterns") },
+        text = { Text("Are you sure you want to delete ${patterns.size} patterns?") },
         confirmButton = {
             Button(
                 onClick = onConfirm,
@@ -548,12 +677,12 @@ fun DeleteMultiplePatternDialog(
                     containerColor = MaterialTheme.colorScheme.error
                 )
             ) {
-                Text("Supprimer")
+                Text("Delete")
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Annuler")
+                Text("Cancel")
             }
         }
     )
