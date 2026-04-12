@@ -2,10 +2,15 @@ package com.example.vibrationeditor.ui.screens.patterns
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.os.Build
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -38,7 +43,9 @@ import com.example.vibrationeditor.ui.screens.shared.AppRow
 import com.example.vibrationeditor.ui.screens.shared.getInstalledApps
 import com.example.vibrationeditor.ui.screens.shared.isNotificationServiceEnabled
 import com.example.vibrationeditor.ui.screens.shared.AppMapping
+import com.example.vibrationeditor.ui.screens.shared.FFT
 import com.example.vibrationeditor.ui.screens.shared.Pattern
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -84,6 +91,127 @@ fun PatternsScreen(
             allPatterns
         } else {
             allPatterns.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        }
+    }
+
+    val audioLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            scope.launch(Dispatchers.IO) {
+                val sampleRate = 44100
+                val bufferSize = 2048
+                val maxDurationMs = 10_000L
+                var totalDurationMs = 0L
+                val durationMs = (bufferSize.toFloat() / sampleRate * 1000).toLong()
+                val fft = FFT(bufferSize)
+                val timings = mutableListOf<Long>()
+                val amplitudes = mutableListOf<Int>()
+                val pcmBuffer = ShortArray(bufferSize)
+                var bufferOffset = 0
+
+                val extractor = MediaExtractor()
+                extractor.setDataSource(context, uri, null)
+
+                // Find audio track
+                var audioTrackIndex = -1
+                for (i in 0 until extractor.trackCount) {
+                    val format = extractor.getTrackFormat(i)
+                    if (format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                        audioTrackIndex = i
+                        break
+                    }
+                }
+                if (audioTrackIndex == -1) return@launch
+
+                extractor.selectTrack(audioTrackIndex)
+                val format = extractor.getTrackFormat(audioTrackIndex)
+                val mime = format.getString(MediaFormat.KEY_MIME)!!
+
+                val codec = MediaCodec.createDecoderByType(mime)
+                codec.configure(format, null, null, 0)
+                codec.start()
+
+                val info = MediaCodec.BufferInfo()
+                var inputDone = false
+                var outputDone = false
+
+                while (!outputDone && totalDurationMs < maxDurationMs) {
+                    // Input
+                    if (!inputDone) {
+                        val inputIndex = codec.dequeueInputBuffer(10_000)
+                        if (inputIndex >= 0) {
+                            val inputBuffer = codec.getInputBuffer(inputIndex)!!
+                            val sampleSize = extractor.readSampleData(inputBuffer, 0)
+                            if (sampleSize < 0) {
+                                codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                inputDone = true
+                            } else {
+                                codec.queueInputBuffer(inputIndex, 0, sampleSize, extractor.sampleTime, 0)
+                                extractor.advance()
+                            }
+                        }
+                    }
+
+                    // Output
+                    val outputIndex = codec.dequeueOutputBuffer(info, 10_000)
+                    if (outputIndex >= 0) {
+                        val outputBuffer = codec.getOutputBuffer(outputIndex)!!
+                        val shorts = ShortArray(outputBuffer.remaining() / 2)
+                        outputBuffer.asShortBuffer().get(shorts)
+
+                        // Fill buffer with chunks of size bufferSize
+                        var pos = 0
+                        while (pos < shorts.size && totalDurationMs < maxDurationMs) {
+                            val toCopy = minOf(bufferSize - bufferOffset, shorts.size - pos)
+                            shorts.copyInto(pcmBuffer, bufferOffset, pos, pos + toCopy)
+                            bufferOffset += toCopy
+                            pos += toCopy
+
+                            if (bufferOffset >= bufferSize) {
+                                // Extract bass
+                                val mags = fft.magnitudes(pcmBuffer)
+                                var bassEnergy = 0f
+                                for (i in 0 until bufferSize / 2) {
+                                    val freq = i * sampleRate.toFloat() / bufferSize
+                                    if (freq in 20f..250f) bassEnergy += mags[i]
+                                }
+                                val amplitude = (bassEnergy / 100f).coerceIn(0f, 255f).toInt()
+                                timings.add(durationMs)
+                                amplitudes.add(amplitude)
+                                totalDurationMs += durationMs
+                                bufferOffset = 0
+                            }
+                        }
+
+                        codec.releaseOutputBuffer(outputIndex, false)
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
+                    }
+                }
+
+                codec.stop()
+                codec.release()
+                extractor.release()
+
+                // Normalization
+                val maxBass = amplitudes.maxOrNull()?.toFloat() ?: 1f
+                val normalizedAmplitudes = if (maxBass > 0) {
+                    amplitudes.map { (it / maxBass * 255f).toInt() }
+                } else amplitudes
+
+                val newPattern = Pattern(
+                    name = "test music",
+                    timings = timings.toLongArray(),
+                    amplitudes = normalizedAmplitudes.toIntArray()
+                )
+
+                scope.launch(Dispatchers.Main) {
+                    val allPatterns = Pattern.loadAll(context).toMutableList()
+                    allPatterns.add(newPattern)
+                    Pattern.saveAll(context, allPatterns)
+                    snackbarHostState.showSnackbar("Pattern '${newPattern.name}' saved")
+                }
+            }
         }
     }
 
@@ -336,6 +464,10 @@ fun PatternsScreen(
             if (showCreateDialog) {
                 CreatePatternDialog(
                     onCreate = { showCreateDialog = false; navigateTo(AppDestinations.STUDIO) },
+                    onMusic = {
+                        audioLauncher.launch("audio/*")
+                        showCreateDialog = false
+                    },
                     onDismiss = { showCreateDialog = false }
                 )
             }
@@ -635,19 +767,37 @@ fun PatternCard(
 @Composable
 fun CreatePatternDialog(
     onCreate: () -> Unit,
+    onMusic: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add pattern") },
         text = {
+            Column {
+                Button(
+                    onClick = onCreate ,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Create in studio")
+                }
+                Button(
+                    onClick = onMusic,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Create from music")
+                }
+            }
+        },
+        confirmButton = {},
+        /*text = {
             Text("Do you want to create a new pattern in the Studio?")
         },
         confirmButton = {
             Button(onClick = onCreate) {
                 Text("Create")
             }
-        },
+        },*/
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
