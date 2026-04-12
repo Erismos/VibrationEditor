@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.vibrationeditor.StableTopAppBar
 import com.example.vibrationeditor.ui.screens.shared.Pattern
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.max
@@ -68,6 +69,8 @@ fun Studio(
     var isAddingPoint by remember { mutableStateOf(false) }
     var selectedIndex by remember { mutableIntStateOf(-1) }
     var isPlaying by remember { mutableStateOf(false) }
+    var playbackProgress by remember { mutableFloatStateOf(0f) }
+    var playbackJob by remember { mutableStateOf<Job?>(null) }
     
     // Persistence state
     var loadedPatternName by remember { mutableStateOf(patternToEdit?.name) }
@@ -260,6 +263,8 @@ fun Studio(
                     onSelectedIndexChange = { selectedIndex = it },
                     isAddingPoint = isAddingPoint,
                     onPointAdded = { isAddingPoint = false },
+                    isPlaying = isPlaying,
+                    playbackProgress = playbackProgress,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(300.dp)
@@ -335,6 +340,7 @@ fun Studio(
                         Button(
                             onClick = {
                                 if (isPlaying) {
+                                    playbackJob?.cancel()
                                     val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                         val manager = context.getSystemService(android.os.VibratorManager::class.java)
                                         manager?.defaultVibrator
@@ -344,13 +350,21 @@ fun Studio(
                                     }
                                     vibrator?.cancel()
                                     isPlaying = false
+                                    playbackProgress = 0f
                                 } else {
-                                    val duration = pattern.timings.sum()
-                                    isPlaying = true
-                                    pattern.play(context)
-                                    scope.launch {
-                                        delay(duration)
-                                        isPlaying = false
+                                    val totalDuration = pattern.timings.sum()
+                                    if (totalDuration > 0) {
+                                        isPlaying = true
+                                        pattern.play(context)
+                                        playbackJob = scope.launch {
+                                            val start = System.currentTimeMillis()
+                                            while (isPlaying && System.currentTimeMillis() - start < totalDuration) {
+                                                playbackProgress = (System.currentTimeMillis() - start).toFloat() / totalDuration
+                                                delay(16)
+                                            }
+                                            isPlaying = false
+                                            playbackProgress = 0f
+                                        }
                                     }
                                 }
                             },
@@ -537,11 +551,23 @@ fun VibrationEnvelopeEditor(
     onSelectedIndexChange: (Int) -> Unit,
     isAddingPoint: Boolean,
     onPointAdded: () -> Unit,
+    isPlaying: Boolean,
+    playbackProgress: Float,
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
     val currentPattern by rememberUpdatedState(pattern)
     val currentOnPatternChange by rememberUpdatedState(onPatternChange)
+    
+    // UI Colors based on theme
+    val curveColor = MaterialTheme.colorScheme.primary
+    val playheadColor = MaterialTheme.colorScheme.error
+    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+    val labelStyle = TextStyle(
+        fontSize = 10.sp, 
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    val axisColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
 
     BoxWithConstraints(modifier = modifier) {
         val width = constraints.maxWidth.toFloat()
@@ -676,22 +702,17 @@ fun VibrationEnvelopeEditor(
             val totalTime = totalPatternTime(pattern)
             
             // Adaptive time stepping
-            // We want roughly 5 to 7 divisions.
             val targetDivisions = 8
             val rawStep = totalTime / targetDivisions
-            
-            // Round rawStep to a nice number (e.g., 100, 200, 500, 1000, 2000, 5000...)
             val niceSteps = listOf(100f, 200f, 500f, 1000f, 2000f, 5000f, 10000f, 20000f, 50000f)
             val timeStep = niceSteps.firstOrNull { it >= rawStep } ?: niceSteps.last()
-            
-            val labelStyle = TextStyle(fontSize = 10.sp, color = Color.Gray)
 
             for (t in 0..totalTime.toInt() step timeStep.toInt()) {
                 val x = horizontalPadding + (t / totalTime) * graphWidth
                 if (x > width - horizontalPadding + 1) continue
 
                 drawLine(
-                    color = Color.LightGray.copy(alpha = 0.3f),
+                    color = gridColor,
                     start = Offset(x, verticalPadding),
                     end = Offset(x, height - verticalPadding),
                     strokeWidth = 1f
@@ -718,7 +739,7 @@ fun VibrationEnvelopeEditor(
                     style = labelStyle
                 )
                 drawLine(
-                    color = Color.LightGray.copy(alpha = 0.3f),
+                    color = gridColor,
                     start = Offset(horizontalPadding, y),
                     end = Offset(width - horizontalPadding, y),
                     strokeWidth = 1f
@@ -726,8 +747,8 @@ fun VibrationEnvelopeEditor(
             }
 
             // Draw X and Y origin lines
-            drawLine(Color.DarkGray, Offset(horizontalPadding, height - verticalPadding), Offset(width - horizontalPadding, height - verticalPadding), 2f)
-            drawLine(Color.DarkGray, Offset(horizontalPadding, verticalPadding), Offset(horizontalPadding, height - verticalPadding), 2f)
+            drawLine(axisColor, Offset(horizontalPadding, height - verticalPadding), Offset(width - horizontalPadding, height - verticalPadding), 2f)
+            drawLine(axisColor, Offset(horizontalPadding, verticalPadding), Offset(horizontalPadding, height - verticalPadding), 2f)
 
             // Draw the waveform path
             val path = Path()
@@ -742,7 +763,7 @@ fun VibrationEnvelopeEditor(
 
                 if (i == selectedIndex) {
                     drawRect(
-                        color = Color.Blue.copy(alpha = 0.1f),
+                        color = curveColor.copy(alpha = 0.15f),
                         topLeft = Offset(xStart, verticalPadding),
                         size = androidx.compose.ui.geometry.Size(xEnd - xStart, graphHeight)
                     )
@@ -752,7 +773,7 @@ fun VibrationEnvelopeEditor(
                 path.lineTo(xEnd, y)
 
                 drawCircle(
-                    color = if (i == selectedIndex) Color.Red else Color.Blue,
+                    color = if (i == selectedIndex) Color.Red else curveColor,
                     radius = if (i == selectedIndex) 10f else 6f,
                     center = Offset((xStart + xEnd) / 2f, y)
                 )
@@ -760,7 +781,18 @@ fun VibrationEnvelopeEditor(
                 currentTime += duration
             }
             path.lineTo(horizontalPadding + (currentTime / totalTime) * graphWidth, height - verticalPadding)
-            drawPath(path, Color.Blue, style = Stroke(5f))
+            drawPath(path, curveColor, style = Stroke(5f))
+
+            // --- Playhead ---
+            if (isPlaying) {
+                val playheadX = horizontalPadding + (playbackProgress * graphWidth)
+                drawLine(
+                    color = playheadColor,
+                    start = Offset(playheadX, verticalPadding),
+                    end = Offset(playheadX, height - verticalPadding),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
 
             //Draw the text of selected index
             if(selectedIndex != -1) {
@@ -779,7 +811,7 @@ fun VibrationEnvelopeEditor(
                         val textLayoutResult = textMeasurer.measure(
                             valueText,
                             style = labelStyle.copy(
-                                color = Color.Blue,
+                                color = curveColor,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                             )
                         )

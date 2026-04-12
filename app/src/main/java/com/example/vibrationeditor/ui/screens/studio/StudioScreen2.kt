@@ -288,7 +288,7 @@ fun StudioScreen2(
                         pattern.timings.zip(pattern.amplitudes.toTypedArray()).map { it.first to it.second }
                     }
 
-                    val waveformColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    val waveformColor = MaterialTheme.colorScheme.primary
                     val playheadColor = MaterialTheme.colorScheme.error
                     val tickColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
 
