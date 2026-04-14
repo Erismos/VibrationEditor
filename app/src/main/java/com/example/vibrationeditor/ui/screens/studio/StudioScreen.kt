@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -61,7 +62,6 @@ fun Studio(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val scrollState = rememberScrollState()
 
     val defaultPattern = remember {
         Pattern(
@@ -80,6 +80,9 @@ fun Studio(
     var playbackProgress by remember { mutableFloatStateOf(0f) }
     var playbackJob by remember { mutableStateOf<Job?>(null) }
     
+    // Performance optimization: Memoize total duration
+    val totalDuration = remember(pattern) { pattern.timings.sum() }
+    
     // Accessibility announcement state
     var accessibilityMessage by remember { mutableStateOf("") }
     
@@ -90,12 +93,15 @@ fun Studio(
     var showOverwriteConfirm by remember { mutableStateOf(false) }
     var saveName by remember { mutableStateOf("") }
 
+    // Visual feedback for switching modes
+    var isSwitching by remember { mutableStateOf(false) }
+
     // Sync only original pattern changes (happens on load/save)
     LaunchedEffect(originalPattern) {
         originalPattern?.let { onOriginalPatternChange(it) }
     }
 
-    // Update state ONLY if patternToEdit changes from the outside (e.g. Navigated from Patterns list)
+    // Update state ONLY if patternToEdit changes from the outside
     LaunchedEffect(patternToEdit) {
         if (patternToEdit != null && patternToEdit != pattern) {
             pattern = patternToEdit
@@ -190,14 +196,47 @@ fun Studio(
         }
     )
 
-    // Sync dirty state with parent (Efficient: only runs when hasModifications flips)
+    // Sync dirty state with parent
     LaunchedEffect(hasModifications) {
         onDirtyStateChanged(hasModifications)
     }
 
     // Handle system back press
     BackHandler(enabled = hasModifications) {
-        onDismissDialog() // Trigger the global dialog
+        onDismissDialog()
+    }
+
+    // Unified playback toggle
+    fun togglePlayback() {
+        if (isPlaying) {
+            playbackJob?.cancel()
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(android.os.Vibrator::class.java)
+            }
+            vibrator?.cancel()
+            isPlaying = false
+            playbackProgress = 0f
+            accessibilityMessage = "Playback stopped"
+        } else {
+            if (totalDuration > 0) {
+                isPlaying = true
+                pattern.play(context)
+                accessibilityMessage = "Playback started"
+                playbackJob = scope.launch {
+                    val start = System.currentTimeMillis()
+                    while (isPlaying && System.currentTimeMillis() - start < totalDuration) {
+                        playbackProgress = (System.currentTimeMillis() - start).toFloat() / totalDuration
+                        delay(16)
+                    }
+                    isPlaying = false
+                    playbackProgress = 0f
+                    accessibilityMessage = "Playback finished"
+                }
+            }
+        }
     }
 
     // Helper functions for saving
@@ -231,10 +270,27 @@ fun Studio(
     Scaffold(
         topBar = { 
             StableTopAppBar(
-                title = "Studio (Classic)",
+                title = "Studio",
                 action = {
-                    IconButton(onClick = { onSwitchVersion(pattern) }){
-                        Icon(Icons.Default.SwapHoriz, "Switch to Touch Mode")
+                    IconButton(
+                        onClick = {
+                            isSwitching = true
+                            scope.launch {
+                                delay(50) 
+                                onSwitchVersion(pattern)
+                            }
+                        },
+                        enabled = !isSwitching
+                    ) {
+                        if (isSwitching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(Icons.Default.SwapHoriz, "Switch version")
+                        }
                     }
                 }
             ) 
@@ -271,79 +327,96 @@ fun Studio(
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
-            // Scrollable Bottom Part
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(scrollState)
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 32.dp)
             ) {
-                VibrationEnvelopeEditor(
-                    pattern = pattern,
-                    onPatternChange = { pattern = it },
-                    selectedIndex = selectedIndex,
-                    onSelectedIndexChange = { selectedIndex = it },
-                    isAddingPoint = isAddingPoint,
-                    onPointAdded = { isAddingPoint = false },
-                    isPlaying = isPlaying,
-                    playbackProgress = playbackProgress,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(300.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = MaterialTheme.shapes.medium
-                        )
-                )
+                item {
+                    VibrationEnvelopeEditor(
+                        pattern = pattern,
+                        onPatternChange = { pattern = it },
+                        selectedIndex = selectedIndex,
+                        onSelectedIndexChange = { selectedIndex = it },
+                        isAddingPoint = isAddingPoint,
+                        onPointAdded = { isAddingPoint = false },
+                        isPlaying = isPlaying,
+                        playbackProgress = playbackProgress,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = MaterialTheme.shapes.medium
+                            )
+                    )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                // Tool Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { isAddingPoint = !isAddingPoint },
-                        modifier = Modifier.weight(1f),
-                        colors = if (isAddingPoint) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary) else ButtonDefaults.buttonColors()
+                    // Tool Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (isAddingPoint) "Cancel" else "Add Point")
+                        Button(
+                            onClick = { isAddingPoint = !isAddingPoint },
+                            modifier = Modifier.weight(1f),
+                            colors = if (isAddingPoint) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary) else ButtonDefaults.buttonColors()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isAddingPoint) "Cancel" else "Add Point")
+                        }
+
+                        Button(
+                            onClick = {
+                                if (selectedIndex != -1) {
+                                    val newTimings = pattern.timings.toMutableList()
+                                    val newAmplitudes = pattern.amplitudes.toMutableList()
+                                    newTimings.removeAt(selectedIndex)
+                                    newAmplitudes.removeAt(selectedIndex)
+                                    pattern = pattern.copy(
+                                        timings = newTimings.toLongArray(),
+                                        amplitudes = newAmplitudes.toIntArray()
+                                    )
+                                    selectedIndex = -1
+                                    accessibilityMessage = "Point deleted"
+                                }
+                            },
+                            enabled = selectedIndex != -1,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Delete Point")
+                        }
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Global Play Button (Width fill screen)
                     Button(
-                        onClick = {
-                            if (selectedIndex != -1) {
-                                val newTimings = pattern.timings.toMutableList()
-                                val newAmplitudes = pattern.amplitudes.toMutableList()
-                                newTimings.removeAt(selectedIndex)
-                                newAmplitudes.removeAt(selectedIndex)
-                                pattern = pattern.copy(
-                                    timings = newTimings.toLongArray(),
-                                    amplitudes = newAmplitudes.toIntArray()
-                                )
-                                selectedIndex = -1
-                                accessibilityMessage = "Point deleted"
-                            }
-                        },
-                        enabled = selectedIndex != -1,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        onClick = { togglePlayback() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = if (isPlaying) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = null)
+                        Icon(if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
-                        Text("Delete Point")
+                        Text(if (isPlaying) "Stop" else "Play")
                     }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Segments List Header
+                    Text("Segments List", style = MaterialTheme.typography.titleMedium)
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Segments List (Accessibility & Precise Editing)
-                Text("Segments List", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                pattern.timings.indices.forEach { index ->
+                // Performance optimization: use key and optimized Row
+                items(
+                    count = pattern.timings.size,
+                    key = { index -> index } 
+                ) { index ->
                     SegmentEditorRow(
                         index = index,
                         duration = pattern.timings[index],
@@ -371,171 +444,101 @@ fun Studio(
                             pattern = pattern.copy(timings = newTimings, amplitudes = newAmplitudes)
                         }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Add Segment Button at the end of the list
-                OutlinedButton(
-                    onClick = {
-                        val newTimings = pattern.timings.toMutableList()
-                        val newAmplitudes = pattern.amplitudes.toMutableList()
-                        
-                        // Logic: Alternating intensity
-                        val lastAmplitude = pattern.amplitudes.lastOrNull() ?: 0
-                        val nextAmplitude = if (lastAmplitude > 0) 0 else 255
-                        
-                        newTimings.add(200L) // Default 200ms
-                        newAmplitudes.add(nextAmplitude)
-                        
-                        pattern = pattern.copy(
-                            timings = newTimings.toLongArray(),
-                            amplitudes = newAmplitudes.toIntArray()
-                        )
-                        selectedIndex = newTimings.size - 1
-                        accessibilityMessage = "New segment added at the end with intensity $nextAmplitude"
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Add Segment")
-                }
+                item {
+                    // Add Segment Button
+                    OutlinedButton(
+                        onClick = {
+                            val newTimings = pattern.timings.toMutableList()
+                            val newAmplitudes = pattern.amplitudes.toMutableList()
+                            val lastAmplitude = pattern.amplitudes.lastOrNull() ?: 0
+                            val nextAmplitude = if (lastAmplitude > 0) 0 else 255
+                            newTimings.add(200L)
+                            newAmplitudes.add(nextAmplitude)
+                            pattern = pattern.copy(timings = newTimings.toLongArray(), amplitudes = newAmplitudes.toIntArray())
+                            selectedIndex = newTimings.size - 1
+                            accessibilityMessage = "New segment added"
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add Segment")
+                    }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Card(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Pattern Configuration", style = MaterialTheme.typography.titleMedium)
-                        if (loadedPatternName != null) {
-                            Row {
-                                Text("Current: $loadedPatternName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                if (hasModifications) {
-                                    Text(" (modified)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = 4.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Pattern Configuration", style = MaterialTheme.typography.titleMedium)
+                            if (loadedPatternName != null) {
+                                Row {
+                                    Text("Current: $loadedPatternName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                    if (hasModifications) {
+                                        Text(" (modified)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = 4.dp))
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Total Duration: $totalDuration ms")
+                            Text("Segments: ${pattern.timings.size}")
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Bottom Play/Stop Button
+                            Button(
+                                onClick = { togglePlayback() },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = if (isPlaying) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
+                            ) {
+                                Icon(if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text(if (isPlaying) "Stop" else "Play")
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // Row 1: Load, Import, Export
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(onClick = { showLoadDialog = true }, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.Folder, contentDescription = null); Spacer(Modifier.width(2.dp)); Text("Load", fontSize = 12.sp)
+                                }
+                                OutlinedButton(onClick = { importLauncher.launch(arrayOf("text/plain")) }, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.FileDownload, contentDescription = null); Spacer(Modifier.width(2.dp)); Text("Import", fontSize = 12.sp)
+                                }
+                                OutlinedButton(onClick = { exportLauncher.launch("${loadedPatternName ?: "vibration"}.txt") }, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.FileUpload, contentDescription = null); Spacer(Modifier.width(2.dp)); Text("Export", fontSize = 12.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Row 2: Save, Save As
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { loadedPatternName?.let { performSave(it) } },
+                                    enabled = loadedPatternName != null && hasModifications,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Save, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Save")
+                                }
+                                Button(
+                                    onClick = { saveName = loadedPatternName ?: ""; showSaveAsDialog = true },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.SaveAs, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Save As")
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Total Duration: ${pattern.timings.sum()} ms")
-                        Text("Segments: ${pattern.timings.size}")
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Play/Stop Button
-                        Button(
-                            onClick = {
-                                if (isPlaying) {
-                                    playbackJob?.cancel()
-                                    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                        val manager = context.getSystemService(android.os.VibratorManager::class.java)
-                                        manager?.defaultVibrator
-                                    } else {
-                                        @Suppress("DEPRECATION")
-                                        context.getSystemService(android.os.Vibrator::class.java)
-                                    }
-                                    vibrator?.cancel()
-                                    isPlaying = false
-                                    playbackProgress = 0f
-                                    accessibilityMessage = "Playback stopped"
-                                } else {
-                                    val totalDuration = pattern.timings.sum()
-                                    if (totalDuration > 0) {
-                                        isPlaying = true
-                                        pattern.play(context)
-                                        accessibilityMessage = "Playback started"
-                                        playbackJob = scope.launch {
-                                            val start = System.currentTimeMillis()
-                                            while (isPlaying && System.currentTimeMillis() - start < totalDuration) {
-                                                playbackProgress = (System.currentTimeMillis() - start).toFloat() / totalDuration
-                                                delay(16)
-                                            }
-                                            isPlaying = false
-                                            playbackProgress = 0f
-                                            accessibilityMessage = "Playback finished"
-                                        }
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = if (isPlaying) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
-                        ) {
-                            Icon(if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (isPlaying) "Stop" else "Play")
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Row 1: Load, Import, Export
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { showLoadDialog = true },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Folder, contentDescription = null)
-                                Spacer(Modifier.width(2.dp))
-                                Text("Load", fontSize = 12.sp)
-                            }
-
-                            OutlinedButton(
-                                onClick = { importLauncher.launch(arrayOf("text/plain")) },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.FileDownload, contentDescription = null)
-                                Spacer(Modifier.width(2.dp))
-                                Text("Import", fontSize = 12.sp)
-                            }
-
-                            OutlinedButton(
-                                onClick = { exportLauncher.launch("${loadedPatternName ?: "vibration"}.txt") },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.FileUpload, contentDescription = null)
-                                Spacer(Modifier.width(2.dp))
-                                Text("Export", fontSize = 12.sp)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Row 2: Save, Save As
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { loadedPatternName?.let { performSave(it) } },
-                                enabled = loadedPatternName != null && hasModifications,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Save, contentDescription = null)
-                                Spacer(Modifier.width(4.dp))
-                                Text("Save")
-                            }
-
-                            Button(
-                                onClick = { 
-                                    saveName = loadedPatternName ?: ""
-                                    showSaveAsDialog = true 
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.SaveAs, contentDescription = null)
-                                Spacer(Modifier.width(4.dp))
-                                Text("Save As")
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
                     }
                 }
-                // Extra spacer to ensure we can scroll past the bottom card
-                Spacer(modifier = Modifier.height(32.dp))
             }
         }
 
@@ -632,6 +635,9 @@ fun Studio(
     }
 }
 
+/**
+ * Optimisé pour le scroll : n'affiche les TextFields que si sélectionné.
+ */
 @Composable
 fun SegmentEditorRow(
     index: Int,
@@ -655,38 +661,60 @@ fun SegmentEditorRow(
         border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Row(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("#${index + 1}", style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = "#${index + 1}", 
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
             
-            OutlinedTextField(
-                value = duration.toString(),
-                onValueChange = { newValue ->
-                    val d = newValue.toLongOrNull() ?: 0L
-                    onUpdate(d, amplitude)
-                },
-                label = { Text("Duration (ms)") },
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true
-            )
+            if (isSelected) {
+                // Mode ÉDITION (Lourd, affiché uniquement sur demande)
+                OutlinedTextField(
+                    value = duration.toString(),
+                    onValueChange = { newValue ->
+                        val d = newValue.toLongOrNull() ?: 0L
+                        onUpdate(d, amplitude)
+                    },
+                    label = { Text("Duration (ms)") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
 
-            OutlinedTextField(
-                value = amplitude.toString(),
-                onValueChange = { newValue ->
-                    val a = newValue.toIntOrNull()?.coerceIn(0, 255) ?: 0
-                    onUpdate(duration, a)
-                },
-                label = { Text("Intensity") },
-                modifier = Modifier.weight(1f),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true
-            )
+                OutlinedTextField(
+                    value = amplitude.toString(),
+                    onValueChange = { newValue ->
+                        val a = newValue.toIntOrNull()?.coerceIn(0, 255) ?: 0
+                        onUpdate(duration, a)
+                    },
+                    label = { Text("Intensity") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
+            } else {
+                // Mode LECTURE (Léger, ultra-rapide pour le scroll)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Duration", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${duration}ms", style = MaterialTheme.typography.bodyMedium)
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Intensity", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("$amplitude", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
 
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.RemoveCircleOutline, contentDescription = "Delete segment ${index + 1}", tint = MaterialTheme.colorScheme.error)
+                Icon(
+                    imageVector = Icons.Default.RemoveCircleOutline, 
+                    contentDescription = "Delete segment ${index + 1}", 
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                )
             }
         }
     }

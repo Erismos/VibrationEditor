@@ -150,7 +150,7 @@ fun VibrationEditorApp() {
     var studioPattern by remember { mutableStateOf<Pattern?>(null) }
     var originalStudioPattern by remember { mutableStateOf<Pattern?>(null) }
     
-    // Toggle between Studio version 1 and version 2
+    // Toggle between Studio version 1 (Classic) and version 2 (Touch)
     var useStudioVersion2 by remember { mutableStateOf(true) }
 
     val navigateTo = { destination: AppDestinations ->
@@ -225,6 +225,8 @@ fun VibrationEditorApp() {
                     onEditPattern = { pattern: Pattern ->
                         studioPattern = pattern
                         originalStudioPattern = pattern
+                        // Force Classic mode when editing from patterns list
+                        useStudioVersion2 = false 
                         navController.navigate(AppDestinations.STUDIO.route) {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true

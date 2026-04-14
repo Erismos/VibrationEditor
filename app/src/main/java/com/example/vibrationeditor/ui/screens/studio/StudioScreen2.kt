@@ -88,6 +88,9 @@ fun StudioScreen2(
     var showOverwriteConfirm by remember { mutableStateOf(false) }
     var saveName by remember { mutableStateOf("") }
 
+    // Visual feedback for switching modes
+    var isSwitching by remember { mutableStateOf(false) }
+
     val hasModifications = remember(pattern, originalPattern) {
         originalPattern != null && pattern != originalPattern
     }
@@ -250,10 +253,27 @@ fun StudioScreen2(
     Scaffold(
         topBar = { 
             StableTopAppBar(
-                title = "Studio (Touch Mode)",
+                title = "Studio",
                 action = {
-                    IconButton(onClick = { onSwitchVersion(pattern) }) {
-                        Icon(Icons.Default.SwapHoriz, "Switch to Classic Mode")
+                    IconButton(
+                        onClick = {
+                            isSwitching = true
+                            scope.launch {
+                                delay(50) // Allow UI to show loading
+                                onSwitchVersion(pattern)
+                            }
+                        },
+                        enabled = !isSwitching
+                    ) {
+                        if (isSwitching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(Icons.Default.SwapHoriz, "Switch to Classic Mode")
+                        }
                     }
                 }
             )
