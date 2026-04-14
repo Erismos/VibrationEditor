@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +25,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -80,6 +84,14 @@ fun StudioScreen2(
     val recordedSegments = remember { mutableStateListOf<Pair<Long, Int>>() }
     var lastTransitionTime by remember { mutableLongStateOf(0L) }
     var isCurrentlyDown by remember { mutableStateOf(false) }
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                return if (isRecording || isCurrentlyDown) available else Offset.Zero
+            }
+        }
+    }
 
     // Persistence state
     var loadedPatternName by remember { mutableStateOf(patternToEdit?.name) }
@@ -283,15 +295,18 @@ fun StudioScreen2(
         Column(
             modifier = Modifier
                 .padding(innerPadding)
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(horizontal = 16.dp)
+                .nestedScroll(nestedScrollConnection)
+                .verticalScroll(scrollState)
         ) {
             Spacer(Modifier.height(16.dp))
+
             Text(
                 text = "Visualization",
                 style = MaterialTheme.typography.titleMedium
             )
-            
+
             // --- Waveform Area ---
             Card(
                 modifier = Modifier
@@ -314,7 +329,7 @@ fun StudioScreen2(
 
                     Canvas(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 12.dp)) {
                         val totalDuration = if (isRecording) maxRecordingTime else pattern.timings.sum().coerceAtLeast(1000L)
-                        
+
                         // --- Time Scale (Ticks & Labels) ---
                         val step = if (totalDuration > 5000L) 1000L else 500L
                         for (time in 0..totalDuration step step) {
@@ -325,7 +340,7 @@ fun StudioScreen2(
                                 end = Offset(x, size.height),
                                 strokeWidth = 1.dp.toPx()
                             )
-                            
+
                             // Labels every 1s (or 500ms if short)
                             if (time % 1000L == 0L || totalDuration <= 2000L) {
                                 val label = "${time / 1000f}s"
@@ -341,20 +356,20 @@ fun StudioScreen2(
                         val path = Path()
                         var currentX = 0f
                         path.moveTo(0f, size.height - 20.dp.toPx()) // Leave space for labels
-                        
+
                         displaySegments.forEach { (duration, amplitude) ->
                             val segmentWidth = (duration.toFloat() / totalDuration) * size.width
                             // Scale amplitude to height, leaving space for labels at the bottom
                             val availableHeight = size.height - 20.dp.toPx()
                             val y = availableHeight - (amplitude.toFloat() / 255f) * availableHeight
-                            
+
                             path.lineTo(currentX, y)
                             path.lineTo(currentX + segmentWidth, y)
                             currentX += segmentWidth
                         }
-                        
+
                         path.lineTo(currentX, size.height - 20.dp.toPx())
-                        
+
                         drawPath(
                             path = path,
                             color = waveformColor,
@@ -397,20 +412,32 @@ fun StudioScreen2(
                     .fillMaxWidth()
                     .height(200.dp)
                     .background(
-                        color = if (isCurrentlyDown) MaterialTheme.colorScheme.primaryContainer 
+                        color = if (isCurrentlyDown) MaterialTheme.colorScheme.primaryContainer
                                 else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
                         shape = MaterialTheme.shapes.medium
                     )
                     .pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                handlePress()
-                                tryAwaitRelease()
-                                handleRelease()
+                        awaitPointerEventScope {
+                            while (true) {
+                                val down = awaitPointerEvent()
+                                if (down.changes.any { it.pressed }) {
+                                    down.changes.forEach { it.consume() }
+                                    handlePress()
+
+                                    var released = false
+                                    while (!released) {
+                                        val event = awaitPointerEvent()
+                                        event.changes.forEach { it.consume() }
+                                        if (event.changes.all { !it.pressed }) {
+                                            released = true
+                                        }
+                                    }
+                                    handleRelease()
+                                }
                             }
-                        )
+                        }
                     },
-                contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center
             ) {
                 if (isCurrentlyDown) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -440,8 +467,8 @@ fun StudioScreen2(
 
             Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(scrollState)
+                    .fillMaxWidth()
+                    // .verticalScroll(scrollState)
             ) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -450,7 +477,7 @@ fun StudioScreen2(
                             Text("Current: $loadedPatternName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         }
                         Text("Duration: ${pattern.timings.sum()} ms")
-                        
+
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Button(
@@ -480,9 +507,9 @@ fun StudioScreen2(
                                 Spacer(Modifier.width(8.dp))
                                 Text("Save", fontSize = 14.sp)
                             }
-                            Button(onClick = { 
+                            Button(onClick = {
                                 saveName = loadedPatternName ?: ""
-                                showSaveAsDialog = true 
+                                showSaveAsDialog = true
                             }, modifier = Modifier.weight(1f)) {
                                 Text("Save As", fontSize = 14.sp)
                             }
