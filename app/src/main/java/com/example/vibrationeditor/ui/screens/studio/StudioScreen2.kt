@@ -8,8 +8,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,7 +20,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -30,7 +27,6 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -233,10 +229,10 @@ fun StudioScreen2(
         if (isPlaying) {
             playbackJob?.cancel()
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                context.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+                context.getSystemService(VibratorManager::class.java)?.defaultVibrator
             } else {
                 @Suppress("DEPRECATION")
-                context.getSystemService(android.os.Vibrator::class.java)
+                context.getSystemService(Vibrator::class.java)
             }
             vibrator?.cancel()
             isPlaying = false
@@ -269,7 +265,7 @@ fun StudioScreen2(
             originalPattern = newPattern.copy()
             loadedPatternName = name
             scope.launch { snackbarHostState.showSnackbar("Pattern '$name' saved") }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             scope.launch { snackbarHostState.showSnackbar("Error saving pattern") }
         }
     }

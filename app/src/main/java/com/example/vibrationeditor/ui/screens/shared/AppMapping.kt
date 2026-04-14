@@ -27,7 +27,7 @@ data class AppMapping(
                 val json = context.openFileInput(FILE_NAME).bufferedReader().readText()
                 val list: List<AppMapping> = Json.decodeFromString(json)
                 list.associateBy { it.packageName }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 emptyMap()
             }
         }

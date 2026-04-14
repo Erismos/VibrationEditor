@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -437,7 +436,7 @@ fun NotificationChannelPicker(
     val isPermissionGranted = isNotificationServiceEnabled(context)
     val listener = VibrationNotificationListener.instance
 
-    val notificationTypes by produceState<List<NotificationType>>(initialValue = emptyList(), listener) {
+    val notificationTypes by produceState(initialValue = emptyList(), listener) {
         if (!isPermissionGranted || listener == null) {
             value = listOf(NotificationType("default", "All notifications"))
             return@produceState
@@ -450,7 +449,7 @@ fun NotificationChannelPicker(
                 } else {
                     channels.map { NotificationType(it.id, it.name?.toString() ?: it.id) }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 value = listOf(NotificationType("default", "All notifications"))
             }
         } else {

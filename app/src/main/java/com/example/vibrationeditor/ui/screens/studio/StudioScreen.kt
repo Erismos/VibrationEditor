@@ -1,9 +1,6 @@
 package com.example.vibrationeditor.ui.screens.studio
 
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,9 +13,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -47,7 +42,6 @@ import com.example.vibrationeditor.ui.screens.shared.Pattern
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.max
 
 @Composable
 fun Studio(
@@ -135,7 +129,7 @@ fun Studio(
                     scope.launch {
                         snackbarHostState.showSnackbar("Pattern exported successfully")
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     scope.launch {
                         snackbarHostState.showSnackbar("Error exporting pattern")
                     }
@@ -161,7 +155,7 @@ fun Studio(
                                 try {
                                     timings.add(parts[0].trim().toLong())
                                     amplitudes.add(parts[1].trim().toInt())
-                                } catch (e: NumberFormatException) {
+                                } catch (_: NumberFormatException) {
                                     // Skip invalid lines
                                 }
                             }
@@ -187,7 +181,7 @@ fun Studio(
                             }
                         }
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     scope.launch {
                         snackbarHostState.showSnackbar("Error importing pattern")
                     }
@@ -260,7 +254,7 @@ fun Studio(
             scope.launch {
                 snackbarHostState.showSnackbar("Pattern '$name' saved")
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             scope.launch {
                 snackbarHostState.showSnackbar("Error saving pattern")
             }
@@ -739,7 +733,7 @@ fun VibrationEnvelopeEditor(
     
     // UI Colors based on theme
     val curveColor = MaterialTheme.colorScheme.primary
-    val playheadColor = MaterialTheme.colorScheme.error
+    // val playheadColor = MaterialTheme.colorScheme.error
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
     val labelStyle = TextStyle(
         fontSize = 10.sp, 
@@ -836,8 +830,8 @@ fun VibrationEnvelopeEditor(
                                     val segmentDuration = p.timings[i]
                                     val x =
                                         horizontalPadding + (currentTime + segmentDuration / 2f) / totalTime * graphWidth
-                                    val y =
-                                        height - verticalPadding - (p.amplitudes[i] / maxAmplitude) * graphHeight
+                                    // val y =
+                                    //     height - verticalPadding - (p.amplitudes[i] / maxAmplitude) * graphHeight
 
                                     if ((offset.x - x) < segmentDuration/2f/totalTime*graphWidth) {
                                         onSelectedIndexChange(i)
@@ -993,7 +987,7 @@ fun VibrationEnvelopeEditor(
                             valueText,
                             style = labelStyle.copy(
                                 color = curveColor,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                fontWeight = FontWeight.Bold
                             )
                         )
                         val centerX = (xStart + xEnd) / 2f
@@ -1003,7 +997,7 @@ fun VibrationEnvelopeEditor(
                             topLeft = Offset(centerX - textLayoutResult.size.width / 2f, y - 40f),
                             style = labelStyle.copy(
                                 color = Color.Red,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                fontWeight = FontWeight.Bold
                             )
                         )
                     }
