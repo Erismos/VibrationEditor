@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,11 +17,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -28,8 +31,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,6 +79,9 @@ fun Studio(
     var isPlaying by remember { mutableStateOf(false) }
     var playbackProgress by remember { mutableFloatStateOf(0f) }
     var playbackJob by remember { mutableStateOf<Job?>(null) }
+    
+    // Accessibility announcement state
+    var accessibilityMessage by remember { mutableStateOf("") }
     
     // Persistence state
     var loadedPatternName by remember { mutableStateOf(patternToEdit?.name) }
@@ -236,6 +247,16 @@ fun Studio(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+            // Live region for accessibility announcements
+            Box(
+                modifier = Modifier
+                    .size(1.dp)
+                    .semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = accessibilityMessage
+                    }
+            )
+
             // Fixed Top Part
             Text(
                 text = "Vibration Envelope Editor",
@@ -303,6 +324,7 @@ fun Studio(
                                     amplitudes = newAmplitudes.toIntArray()
                                 )
                                 selectedIndex = -1
+                                accessibilityMessage = "Point deleted"
                             }
                         },
                         enabled = selectedIndex != -1,
@@ -313,6 +335,70 @@ fun Studio(
                         Spacer(Modifier.width(4.dp))
                         Text("Delete Point")
                     }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Segments List (Accessibility & Precise Editing)
+                Text("Segments List", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                pattern.timings.indices.forEach { index ->
+                    SegmentEditorRow(
+                        index = index,
+                        duration = pattern.timings[index],
+                        amplitude = pattern.amplitudes[index],
+                        isSelected = index == selectedIndex,
+                        onSelect = { selectedIndex = index },
+                        onDelete = {
+                            val newTimings = pattern.timings.toMutableList()
+                            val newAmplitudes = pattern.amplitudes.toMutableList()
+                            newTimings.removeAt(index)
+                            newAmplitudes.removeAt(index)
+                            pattern = pattern.copy(
+                                timings = newTimings.toLongArray(),
+                                amplitudes = newAmplitudes.toIntArray()
+                            )
+                            if (selectedIndex == index) selectedIndex = -1
+                            else if (selectedIndex > index) selectedIndex--
+                            accessibilityMessage = "Segment ${index + 1} deleted"
+                        },
+                        onUpdate = { newD, newA ->
+                            val newTimings = pattern.timings.copyOf()
+                            val newAmplitudes = pattern.amplitudes.copyOf()
+                            newTimings[index] = newD
+                            newAmplitudes[index] = newA
+                            pattern = pattern.copy(timings = newTimings, amplitudes = newAmplitudes)
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Add Segment Button at the end of the list
+                OutlinedButton(
+                    onClick = {
+                        val newTimings = pattern.timings.toMutableList()
+                        val newAmplitudes = pattern.amplitudes.toMutableList()
+                        
+                        // Logic: Alternating intensity
+                        val lastAmplitude = pattern.amplitudes.lastOrNull() ?: 0
+                        val nextAmplitude = if (lastAmplitude > 0) 0 else 255
+                        
+                        newTimings.add(200L) // Default 200ms
+                        newAmplitudes.add(nextAmplitude)
+                        
+                        pattern = pattern.copy(
+                            timings = newTimings.toLongArray(),
+                            amplitudes = newAmplitudes.toIntArray()
+                        )
+                        selectedIndex = newTimings.size - 1
+                        accessibilityMessage = "New segment added at the end with intensity $nextAmplitude"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add Segment")
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -351,11 +437,13 @@ fun Studio(
                                     vibrator?.cancel()
                                     isPlaying = false
                                     playbackProgress = 0f
+                                    accessibilityMessage = "Playback stopped"
                                 } else {
                                     val totalDuration = pattern.timings.sum()
                                     if (totalDuration > 0) {
                                         isPlaying = true
                                         pattern.play(context)
+                                        accessibilityMessage = "Playback started"
                                         playbackJob = scope.launch {
                                             val start = System.currentTimeMillis()
                                             while (isPlaying && System.currentTimeMillis() - start < totalDuration) {
@@ -364,6 +452,7 @@ fun Studio(
                                             }
                                             isPlaying = false
                                             playbackProgress = 0f
+                                            accessibilityMessage = "Playback finished"
                                         }
                                     }
                                 }
@@ -544,6 +633,66 @@ fun Studio(
 }
 
 @Composable
+fun SegmentEditorRow(
+    index: Int,
+    duration: Long,
+    amplitude: Int,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit,
+    onUpdate: (Long, Int) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect() }
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Segment ${index + 1}: Duration $duration milliseconds, Intensity $amplitude"
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+        ),
+        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("#${index + 1}", style = MaterialTheme.typography.labelLarge)
+            
+            OutlinedTextField(
+                value = duration.toString(),
+                onValueChange = { newValue ->
+                    val d = newValue.toLongOrNull() ?: 0L
+                    onUpdate(d, amplitude)
+                },
+                label = { Text("Duration (ms)") },
+                modifier = Modifier.weight(1f),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = amplitude.toString(),
+                onValueChange = { newValue ->
+                    val a = newValue.toIntOrNull()?.coerceIn(0, 255) ?: 0
+                    onUpdate(duration, a)
+                },
+                label = { Text("Intensity") },
+                modifier = Modifier.weight(1f),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true
+            )
+
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.RemoveCircleOutline, contentDescription = "Delete segment ${index + 1}", tint = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
 fun VibrationEnvelopeEditor(
     pattern: Pattern,
     onPatternChange: (Pattern) -> Unit,
@@ -584,6 +733,9 @@ fun VibrationEnvelopeEditor(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                .semantics {
+                    contentDescription = "Vibration graph with ${pattern.timings.size} segments. Total duration ${pattern.timings.sum()}ms."
+                }
                 // Combined gesture detection
                 .pointerInput(isAddingPoint) {
                     detectTapGestures { offset ->
@@ -763,7 +915,7 @@ fun VibrationEnvelopeEditor(
 
                 if (i == selectedIndex) {
                     drawRect(
-                        color = curveColor.copy(alpha = 0.15f),
+                        color = Color.Blue.copy(alpha = 0.15f),
                         topLeft = Offset(xStart, verticalPadding),
                         size = androidx.compose.ui.geometry.Size(xEnd - xStart, graphHeight)
                     )
@@ -787,7 +939,7 @@ fun VibrationEnvelopeEditor(
             if (isPlaying) {
                 val playheadX = horizontalPadding + (playbackProgress * graphWidth)
                 drawLine(
-                    color = playheadColor,
+                    color = Color.Red,
                     start = Offset(playheadX, verticalPadding),
                     end = Offset(playheadX, height - verticalPadding),
                     strokeWidth = 2.dp.toPx()
