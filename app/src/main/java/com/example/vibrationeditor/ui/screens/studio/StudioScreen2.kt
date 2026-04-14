@@ -69,6 +69,9 @@ fun StudioScreen2(
     var pattern by remember { mutableStateOf(patternToEdit ?: defaultPattern) }
     var originalPattern by remember { mutableStateOf<Pattern?>(initialOriginalPattern ?: patternToEdit ?: defaultPattern) }
 
+    // Performance optimization: Memoize total duration
+    val totalDuration = remember(pattern) { pattern.timings.sum() }
+
     // Recording State
     var isRecording by remember { mutableStateOf(false) }
     var recordingProgress by remember { mutableFloatStateOf(0f) }
@@ -226,19 +229,32 @@ fun StudioScreen2(
         vibrator.cancel()
     }
 
-    fun playPattern() {
-        playbackJob?.cancel()
-        pattern.play(context)
-        playbackJob = scope.launch {
-            isPlaying = true
-            val total = pattern.timings.sum()
-            val start = System.currentTimeMillis()
-            while (isPlaying && System.currentTimeMillis() - start < total) {
-                playbackProgress = (System.currentTimeMillis() - start).toFloat() / total
-                delay(16)
+    fun togglePlayback() {
+        if (isPlaying) {
+            playbackJob?.cancel()
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(android.os.Vibrator::class.java)
             }
+            vibrator?.cancel()
             isPlaying = false
             playbackProgress = 0f
+        } else {
+            if (totalDuration > 0) {
+                isPlaying = true
+                pattern.play(context)
+                playbackJob = scope.launch {
+                    val start = System.currentTimeMillis()
+                    while (isPlaying && System.currentTimeMillis() - start < totalDuration) {
+                        playbackProgress = (System.currentTimeMillis() - start).toFloat() / totalDuration
+                        delay(16)
+                    }
+                    isPlaying = false
+                    playbackProgress = 0f
+                }
+            }
         }
     }
 
@@ -481,13 +497,14 @@ fun StudioScreen2(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Button(
-                            onClick = { playPattern() },
+                            onClick = { togglePlayback() },
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = pattern.timings.isNotEmpty() && !isPlaying
+                            enabled = pattern.timings.isNotEmpty(),
+                            colors = if (isPlaying) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
                         ) {
-                            Icon(if (isPlaying) Icons.Default.Refresh else Icons.Default.PlayArrow, null, modifier = Modifier.size(14.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (isPlaying) "Playing..." else "Play Result")
+                            Icon(if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isPlaying) "Stop" else "Play")
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))

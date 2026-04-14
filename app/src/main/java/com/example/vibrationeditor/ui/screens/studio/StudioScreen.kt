@@ -399,6 +399,7 @@ fun Studio(
                     Button(
                         onClick = { togglePlayback() },
                         modifier = Modifier.fillMaxWidth(),
+                        enabled = pattern.timings.isNotEmpty(),
                         colors = if (isPlaying) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
                     ) {
                         Icon(if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = null)
