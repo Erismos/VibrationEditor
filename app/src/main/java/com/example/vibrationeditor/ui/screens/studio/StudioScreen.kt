@@ -1,6 +1,10 @@
 package com.example.vibrationeditor.ui.screens.studio
 
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -73,6 +77,7 @@ fun Studio(
     var isPlaying by remember { mutableStateOf(false) }
     var playbackProgress by remember { mutableFloatStateOf(0f) }
     var playbackJob by remember { mutableStateOf<Job?>(null) }
+    var showCapabilitiesDialog by remember { mutableStateOf(false) }
     
     // Performance optimization: Memoize total duration
     val totalDuration = remember(pattern) { pattern.timings.sum() }
@@ -401,6 +406,27 @@ fun Studio(
                         Text(if (isPlaying) "Stop" else "Play")
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Row Save, Save As
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { loadedPatternName?.let { performSave(it) } },
+                            enabled = loadedPatternName != null && hasModifications,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Save")
+                        }
+                        Button(
+                            onClick = { saveName = loadedPatternName ?: ""; showSaveAsDialog = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.SaveAs, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Save As")
+                        }
+                    }
                     Spacer(modifier = Modifier.height(24.dp))
 
                     // Segments List Header
@@ -533,11 +559,93 @@ fun Studio(
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Hardware Capabilities Button
+                    Button(
+                        onClick = { showCapabilitiesDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Check Hardware Capabilities")
+                    }
+                    
+                    Spacer(modifier = Modifier.height(48.dp))
                 }
             }
         }
 
         // --- Dialogs ---
+
+        if (showCapabilitiesDialog) {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(android.os.Vibrator::class.java) as? Vibrator
+            }
+            
+            AlertDialog(
+                onDismissRequest = { showCapabilitiesDialog = false },
+                title = { Text("Hardware Haptic Capabilities") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (vibrator != null) {
+                            CapabilityItem(label = "Vibrator present", available = vibrator.hasVibrator())
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                CapabilityItem(label = "Amplitude control", available = vibrator.hasAmplitudeControl())
+                            } else {
+                                Text("Amplitude control: Unavailable", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            }
+                            
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                val primitives = listOf(
+                                    VibrationEffect.Composition.PRIMITIVE_CLICK to "Click",
+                                    VibrationEffect.Composition.PRIMITIVE_THUD to "Thud",
+                                    VibrationEffect.Composition.PRIMITIVE_SPIN to "Spin",
+                                    VibrationEffect.Composition.PRIMITIVE_QUICK_RISE to "Quick Rise",
+                                    VibrationEffect.Composition.PRIMITIVE_SLOW_RISE to "Slow Rise",
+                                    VibrationEffect.Composition.PRIMITIVE_QUICK_FALL to "Quick Fall",
+                                    VibrationEffect.Composition.PRIMITIVE_TICK to "Tick",
+                                    VibrationEffect.Composition.PRIMITIVE_LOW_TICK to "Low Tick",
+
+                                )
+                                val supported = vibrator.arePrimitivesSupported(*primitives.map { it.first }.toIntArray())
+                                
+                                Text("Vibration Primitives supported:", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                                primitives.forEachIndexed { index, pair ->
+                                    CapabilityItem(label = pair.second, available = supported[index], isSubItem = true)
+                                }
+                            }
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                val primitives = listOf(
+                                    VibrationEffect.EFFECT_CLICK to "Click",
+                                    VibrationEffect.EFFECT_DOUBLE_CLICK to "Double Click",
+                                    VibrationEffect.EFFECT_TICK to "Tick",
+                                    VibrationEffect.EFFECT_HEAVY_CLICK to "Heavy Click",
+
+                                    )
+                                val supported = vibrator.areEffectsSupported(*primitives.map { it.first }.toIntArray())
+
+                                Text("Vibration Effects supported:", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                                primitives.forEachIndexed { index, pair ->
+                                    CapabilityItem(label = pair.second, available = (supported[index] == Vibrator.VIBRATION_EFFECT_SUPPORT_YES), isSubItem = true)
+                                }
+                            }
+                        } else {
+                            Text("No vibrator found on this device.", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showCapabilitiesDialog = false }) { Text("Close") }
+                }
+            )
+        }
 
         if (showSaveAsDialog) {
             AlertDialog(
@@ -626,6 +734,24 @@ fun Studio(
                     TextButton(onClick = { showLoadDialog = false }) { Text("Close") }
                 }
             )
+        }
+    }
+}
+
+@Composable
+fun CapabilityItem(label: String, available: Boolean, isSubItem: Boolean = false) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = if (isSubItem) 16.dp else 0.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, style = if (isSubItem) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium)
+        if (available) {
+            Icon(Icons.Default.Check, contentDescription = "Available", tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+        } else {
+            Icon(Icons.Default.Close, contentDescription = "Unavailable", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
         }
     }
 }
