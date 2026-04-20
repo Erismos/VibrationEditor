@@ -58,12 +58,12 @@ fun StudioScreen2(
     val scrollState = rememberScrollState()
     val textMeasurer = rememberTextMeasurer()
 
-    val defaultPattern = remember {
+    val blankPattern = remember {
         Pattern("New Pattern", longArrayOf(), intArrayOf())
     }
 
-    var pattern by remember { mutableStateOf(patternToEdit ?: defaultPattern) }
-    var originalPattern by remember { mutableStateOf<Pattern?>(initialOriginalPattern ?: patternToEdit ?: defaultPattern) }
+    var pattern by remember { mutableStateOf(patternToEdit ?: blankPattern) }
+    var originalPattern by remember { mutableStateOf<Pattern?>(initialOriginalPattern ?: patternToEdit ?: blankPattern) }
 
     // Performance optimization: Memoize total duration
     val totalDuration = remember(pattern) { pattern.timings.sum() }
@@ -274,6 +274,8 @@ fun StudioScreen2(
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
     )
 
+    val isPatternBlank = pattern.timings.isEmpty()
+
     Scaffold(
         topBar = { 
             StableTopAppBar(
@@ -314,10 +316,30 @@ fun StudioScreen2(
         ) {
             Spacer(Modifier.height(16.dp))
 
-            Text(
-                text = "Visualization",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Visualization",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                if (!isPatternBlank) {
+                    TextButton(
+                        onClick = {
+                            pattern = blankPattern
+                            loadedPatternName = null
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Clear")
+                    }
+                }
+            }
 
             // --- Waveform Area ---
             Card(
@@ -415,7 +437,8 @@ fun StudioScreen2(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "Recording Pad",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = if (isPatternBlank) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
             )
 
             // --- Recording Area ---
@@ -424,11 +447,16 @@ fun StudioScreen2(
                     .fillMaxWidth()
                     .height(200.dp)
                     .background(
-                        color = if (isCurrentlyDown) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
+                        color = when {
+                            isCurrentlyDown -> MaterialTheme.colorScheme.primaryContainer
+                            isPatternBlank -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                        },
                         shape = MaterialTheme.shapes.medium
                     )
-                    .pointerInput(Unit) {
+                    .pointerInput(isPatternBlank) {
+                        if (!isPatternBlank) return@pointerInput
+
                         awaitPointerEventScope {
                             while (true) {
                                 val down = awaitPointerEvent()
@@ -461,7 +489,8 @@ fun StudioScreen2(
                         )
                     }
                 } else {
-                    Text("Press and Hold to Record", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    val message = if (isPatternBlank) "Press and Hold to Record" else "Clear pattern to record new"
+                    Text(message, color = if (isPatternBlank) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                 }
             }
 
