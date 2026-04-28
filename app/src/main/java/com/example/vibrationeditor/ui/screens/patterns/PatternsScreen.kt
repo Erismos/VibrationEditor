@@ -319,12 +319,32 @@ fun PatternsScreen(
 
             // Dialogs
             if (showDeleteDialog && selectedPattern != null) {
+                val patternToDelete = selectedPattern!!
                 DeletePatternDialog(
-                    pattern = selectedPattern!!,
+                    pattern = patternToDelete,
                     onConfirm = {
-                        val updatedList = allPatterns.filter { it.name != selectedPattern!!.name }
+                        val updatedList = allPatterns.filter { it.name != patternToDelete.name }
                         Pattern.saveAll(context, updatedList)
+
+                        // set mapped app to default
                         allPatterns = updatedList
+                        val deletedName = patternToDelete.name
+                        val allMappings = AppMapping.loadAll(context).toMutableMap()
+                        var mappingsChanged = false
+
+                        allMappings.forEach { (packageName, appMapping) ->
+                            val cleanedChannels = appMapping.channelMappings.filter { it.value != deletedName }
+
+                            if (cleanedChannels.size != appMapping.channelMappings.size) {
+                                allMappings[packageName] = AppMapping(packageName, cleanedChannels)
+                                mappingsChanged = true
+                            }
+                        }
+
+                        if (mappingsChanged) {
+                            AppMapping.saveAll(context, allMappings)
+                        }
+
                         selectedPattern = null
                         showDeleteDialog = false
                     },
@@ -340,12 +360,32 @@ fun PatternsScreen(
             }
 
             if (showDeleteMultipleDialog && selectedPatterns.isNotEmpty()) {
+                val patternsToDelete = selectedPatterns
                 DeleteMultiplePatternDialog(
-                    patterns = selectedPatterns,
+                    patterns = patternsToDelete,
                     onConfirm = {
-                        val updatedList = allPatterns.filter { it !in selectedPatterns }
+                        val deletedNames = patternsToDelete.map { it.name }.toSet()
+                        val updatedList = allPatterns.filter { it !in patternsToDelete }
                         Pattern.saveAll(context, updatedList)
                         allPatterns = updatedList
+
+                        // set mapped app to default
+                        val allMappings = AppMapping.loadAll(context).toMutableMap()
+                        var mappingsChanged = false
+
+                        allMappings.forEach { (packageName, appMapping) ->
+                            val cleanedChannels = appMapping.channelMappings.filter { it.value !in deletedNames }
+
+                            if (cleanedChannels.size != appMapping.channelMappings.size) {
+                                allMappings[packageName] = AppMapping(packageName, cleanedChannels)
+                                mappingsChanged = true
+                            }
+                        }
+
+                        if (mappingsChanged) {
+                            AppMapping.saveAll(context, allMappings)
+                        }
+
                         selectedPatterns = emptyList()
                         showDeleteMultipleDialog = false
                     },
